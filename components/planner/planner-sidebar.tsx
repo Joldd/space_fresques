@@ -2,15 +2,16 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { RoomDimensions } from "@/lib/planner/types";
+import type { Room } from "@/lib/planner/types";
 import {
   DEFAULT_CHAIR,
   DEFAULT_TABLE,
 } from "@/lib/planner/use-planner-store";
 
 type PlannerSideBarProps = {
-  room: RoomDimensions;
-  onSetRoom: (room: RoomDimensions) => void;
+  room: Room;
+  onSetRectangleRoom: (widthM: number, heightM: number) => void;
+  onSetPasserelleRoom: () => void;
   onAddTable: (widthCm: number, depthCm: number) => void;
   onAddChair: (diameterCm: number) => void;
   selectedCount: number;
@@ -63,9 +64,13 @@ function NumberField({
   );
 }
 
+const DEFAULT_CUSTOM_WIDTH_M = 8;
+const DEFAULT_CUSTOM_HEIGHT_M = 5;
+
 export function PlannerSideBar({
   room,
-  onSetRoom,
+  onSetRectangleRoom,
+  onSetPasserelleRoom,
   onAddTable,
   onAddChair,
   selectedCount,
@@ -73,18 +78,19 @@ export function PlannerSideBar({
   onRotate,
   onDelete,
 }: PlannerSideBarProps) {
-  const [widthM, setWidthM] = useState(room.widthM);
-  const [heightM, setHeightM] = useState(room.heightM);
+  const [widthM, setWidthM] = useState(
+    room.kind === "rectangle" ? room.widthM : DEFAULT_CUSTOM_WIDTH_M,
+  );
+  const [heightM, setHeightM] = useState(
+    room.kind === "rectangle" ? room.heightM : DEFAULT_CUSTOM_HEIGHT_M,
+  );
   const [tableWidth, setTableWidth] = useState(DEFAULT_TABLE.widthCm);
   const [tableDepth, setTableDepth] = useState(DEFAULT_TABLE.depthCm);
   const [chairDiameter, setChairDiameter] = useState(DEFAULT_CHAIR.diameterCm);
 
   function applyRoom(e: FormEvent) {
     e.preventDefault();
-    onSetRoom({
-      widthM: Math.max(widthM, 1),
-      heightM: Math.max(heightM, 1),
-    });
+    onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1));
   }
 
   function submitTable(e: FormEvent) {
@@ -108,19 +114,50 @@ export function PlannerSideBar({
         </p>
       </div>
 
-      <Card title="Dimensions de la salle">
-        <form onSubmit={applyRoom} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField label="Largeur" value={widthM} onChange={setWidthM} min={1} step={0.5} suffix="m" />
-            <NumberField label="Profondeur" value={heightM} onChange={setHeightM} min={1} step={0.5} suffix="m" />
-          </div>
+      <Card title="Forme de la salle">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           <button
-            type="submit"
-            className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
+            type="button"
+            onClick={onSetPasserelleRoom}
+            className={`rounded-xl text-sm font-medium py-2 transition-colors ${
+              room.kind === "passerelle"
+                ? "bg-[#3F5A45] text-white"
+                : "bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/10 dark:hover:bg-white/15"
+            }`}
           >
-            Mettre à jour la salle
+            🌉 Passerelle
           </button>
-        </form>
+          <button
+            type="button"
+            onClick={() => onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1))}
+            className={`rounded-xl text-sm font-medium py-2 transition-colors ${
+              room.kind === "rectangle"
+                ? "bg-[#3F5A45] text-white"
+                : "bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/10 dark:hover:bg-white/15"
+            }`}
+          >
+            ▭ Rectangle
+          </button>
+        </div>
+
+        {room.kind === "passerelle" ? (
+          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
+            Le plan réel de la salle Passerelle : {room.widthM} m × {room.heightM} m.
+          </p>
+        ) : (
+          <form onSubmit={applyRoom} className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="Largeur" value={widthM} onChange={setWidthM} min={1} step={0.5} suffix="m" />
+              <NumberField label="Profondeur" value={heightM} onChange={setHeightM} min={1} step={0.5} suffix="m" />
+            </div>
+            <button
+              type="submit"
+              className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
+            >
+              Mettre à jour la salle
+            </button>
+          </form>
+        )}
       </Card>
 
       <Card title="Ajouter une table">
@@ -181,6 +218,7 @@ export function PlannerSideBar({
           <li>Clic + glisser sur une zone vide pour sélectionner plusieurs éléments</li>
           <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
           <li>Touche R pour pivoter, Suppr pour supprimer</li>
+          <li>Impossible de sortir une table ou une chaise de la salle</li>
         </ul>
       </div>
     </aside>

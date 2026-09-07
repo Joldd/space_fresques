@@ -1,9 +1,14 @@
 // lib/planner/types.ts
 
-export type RoomDimensions = {
-  /** largeur de la salle, en mètres */
+export type RoomShapeKind = "passerelle" | "rectangle";
+
+export type Room = {
+  kind: RoomShapeKind;
+  /** contour de la salle, en cm, dans son propre repère (haut-gauche ≈ origine) */
+  polygon: Point[];
+  /** largeur de la boîte englobante, en mètres (affichage) */
   widthM: number;
-  /** profondeur de la salle, en mètres */
+  /** hauteur de la boîte englobante, en mètres (affichage) */
   heightM: number;
 };
 

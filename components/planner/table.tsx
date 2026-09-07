@@ -1,17 +1,18 @@
 // components/planner/table.tsx
 "use client";
 
-import { useRef } from "react";
 import { Group, Rect } from "react-konva";
-import type Konva from "konva";
-import type { TableObject } from "@/lib/planner/types";
-import { cmToPx, pxToCm } from "@/lib/planner/scale";
+import type { Point, SceneObject, TableObject } from "@/lib/planner/types";
+import { cmToPx } from "@/lib/planner/scale";
+import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
 
 type TableProps = {
   table: TableObject;
   scale: number;
   origin: { x: number; y: number };
+  roomPolygon: Point[];
   selected: boolean;
+  getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
   onDragDelta: (dxCm: number, dyCm: number) => void;
 };
@@ -20,7 +21,9 @@ export function Table({
   table,
   scale,
   origin,
+  roomPolygon,
   selected,
+  getDragGroup,
   onPointerDown,
   onDragDelta,
 }: TableProps) {
@@ -28,27 +31,15 @@ export function Table({
   const depthPx = cmToPx(table.depthCm, scale);
   const x = origin.x + cmToPx(table.x, scale);
   const y = origin.y + cmToPx(table.y, scale);
-  const lastPointPx = useRef({ x, y });
 
-  function handleMouseDown(e: Konva.KonvaEventObject<MouseEvent>) {
-    const additive = e.evt.ctrlKey || e.evt.metaKey || e.evt.shiftKey;
-    onPointerDown(table.id, additive);
-  }
-
-  function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
-    lastPointPx.current = { x: e.target.x(), y: e.target.y() };
-  }
-
-  function handleDragMove(e: Konva.KonvaEventObject<DragEvent>) {
-    const newX = e.target.x();
-    const newY = e.target.y();
-    const dxPx = newX - lastPointPx.current.x;
-    const dyPx = newY - lastPointPx.current.y;
-    lastPointPx.current = { x: newX, y: newY };
-    if (dxPx !== 0 || dyPx !== 0) {
-      onDragDelta(pxToCm(dxPx, scale), pxToCm(dyPx, scale));
-    }
-  }
+  const { handleMouseDown, handleDragStart, handleDragMove, dragBoundFunc } = useConstrainedDrag({
+    id: table.id,
+    scale,
+    roomPolygon,
+    getDragGroup,
+    onPointerDown,
+    onDragDelta,
+  });
 
   return (
     <Group
@@ -56,6 +47,7 @@ export function Table({
       y={y}
       rotation={table.rotation}
       draggable
+      dragBoundFunc={dragBoundFunc}
       onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}

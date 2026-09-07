@@ -69,7 +69,8 @@ export function PlannerCanvas() {
     room,
     objects,
     selectedIds,
-    setRoom,
+    setRectangleRoom,
+    setPasserelleRoom,
     addTable,
     addChair,
     removeSelected,
@@ -158,17 +159,42 @@ export function PlannerCanvas() {
     [objects, scale, origin, selectRect, clearSelection],
   );
 
+  // snapshot de "qui doit bouger avec qui" pendant un drag, résolu de façon
+  // synchrone au mousedown (indépendant du re-render React qui suit le
+  // dispatch de sélection, dont le timing n'est pas garanti avant le dragstart)
+  const resolvedSelectionRef = useRef<string[]>(selectedIds);
+
   const handleObjectPointerDown = useCallback(
     (id: string, additive: boolean) => {
+      const current = selectedIds;
+      resolvedSelectionRef.current = additive
+        ? current.includes(id)
+          ? current.filter((x) => x !== id)
+          : [...current, id]
+        : current.includes(id)
+          ? current
+          : [id];
+
       if (additive) {
         select([id], true);
         return;
       }
-      if (!selectedIds.includes(id)) {
+      if (!current.includes(id)) {
         select([id], false);
       }
     },
     [select, selectedIds],
+  );
+
+  const getDragGroup = useCallback(
+    (id: string): SceneObject[] => {
+      const ids = resolvedSelectionRef.current.includes(id)
+        ? resolvedSelectionRef.current
+        : [id];
+      const idSet = new Set(ids);
+      return objects.filter((obj) => idSet.has(obj.id));
+    },
+    [objects],
   );
 
   const handleDragDelta = useCallback(
@@ -203,7 +229,8 @@ export function PlannerCanvas() {
     <div className="flex h-[calc(100vh-56px)] bg-[#EFE7D6] dark:bg-[#1B1F1A]">
       <PlannerSideBar
         room={room}
-        onSetRoom={setRoom}
+        onSetRectangleRoom={setRectangleRoom}
+        onSetPasserelleRoom={setPasserelleRoom}
         onAddTable={addTable}
         onAddChair={addChair}
         selectedCount={selectedCount}
@@ -228,7 +255,9 @@ export function PlannerCanvas() {
                   table={obj}
                   scale={scale}
                   origin={origin}
+                  roomPolygon={room.polygon}
                   selected={selectedIds.includes(obj.id)}
+                  getDragGroup={getDragGroup}
                   onPointerDown={handleObjectPointerDown}
                   onDragDelta={handleDragDelta}
                 />
@@ -238,7 +267,9 @@ export function PlannerCanvas() {
                   chair={obj}
                   scale={scale}
                   origin={origin}
+                  roomPolygon={room.polygon}
                   selected={selectedIds.includes(obj.id)}
+                  getDragGroup={getDragGroup}
                   onPointerDown={handleObjectPointerDown}
                   onDragDelta={handleDragDelta}
                 />

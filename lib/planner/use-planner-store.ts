@@ -2,22 +2,18 @@
 "use client";
 
 import { useCallback, useEffect, useReducer } from "react";
-import type {
-  ChairObject,
-  RoomDimensions,
-  Rotation,
-  SceneObject,
-  TableObject,
-} from "./types";
+import type { ChairObject, Room, Rotation, SceneObject, TableObject } from "./types";
+import { PASSERELLE_ROOM, isValidRoom, makeRectangleRoom } from "./rooms";
+import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry";
 
 const STORAGE_KEY = "space-fresques:planner";
 
-export const DEFAULT_ROOM: RoomDimensions = { widthM: 8, heightM: 5 };
+export const DEFAULT_ROOM: Room = PASSERELLE_ROOM;
 export const DEFAULT_TABLE = { widthCm: 140, depthCm: 70 };
 export const DEFAULT_CHAIR = { diameterCm: 45 };
 
 type State = {
-  room: RoomDimensions;
+  room: Room;
   objects: SceneObject[];
   selectedIds: string[];
   /** true dès que la lecture du localStorage a été tentée (succès ou non) */
@@ -25,9 +21,9 @@ type State = {
 };
 
 type Action =
-  | { type: "LOAD"; room: RoomDimensions; objects: SceneObject[] }
+  | { type: "LOAD"; room: Room; objects: SceneObject[] }
   | { type: "MARK_HYDRATED" }
-  | { type: "SET_ROOM"; room: RoomDimensions }
+  | { type: "SET_ROOM"; room: Room }
   | { type: "ADD_TABLE"; widthCm: number; depthCm: number }
   | { type: "ADD_CHAIR"; diameterCm: number }
   | { type: "REMOVE_SELECTED" }
@@ -54,17 +50,31 @@ function mergeSelection(current: string[], ids: string[]): string[] {
   return Array.from(new Set([...current, ...ids]));
 }
 
-/** décale chaque nouvel objet en cascade pour éviter qu'ils ne s'empilent tous au même endroit */
-function spawnPosition(state: State): { x: number; y: number } {
+/** replace tous les objets à l'intérieur du polygone donné (best-effort, un par un) */
+function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
+  return objects.map((obj) => {
+    const { x, y } = clampObjectPosition(obj, room.polygon);
+    return x === obj.x && y === obj.y ? obj : { ...obj, x, y };
+  });
+}
+
+type Footprint = Omit<TableObject, "id" | "x" | "y"> | Omit<ChairObject, "id" | "x" | "y">;
+
+/** point de départ (centre de la boîte englobante) + décalage en cascade, ramené dans la salle */
+function spawnPosition(state: State, footprint: Footprint): {
+  x: number;
+  y: number;
+} {
   const step = 28; // cm
   const cascadeLength = 8;
   const offset = (state.objects.length % cascadeLength) * step;
-  const roomWidthCm = state.room.widthM * 100;
-  const roomHeightCm = state.room.heightM * 100;
-  return {
-    x: Math.min(roomWidthCm / 2 + offset, roomWidthCm - 20),
-    y: Math.min(roomHeightCm / 2 + offset, roomHeightCm - 20),
+  const bounds = polygonBounds(state.room.polygon);
+  const candidate = {
+    x: (bounds.minX + bounds.maxX) / 2 + offset,
+    y: (bounds.minY + bounds.maxY) / 2 + offset,
   };
+  const probe = { id: "spawn-probe", ...footprint, ...candidate } as SceneObject;
+  return clampObjectPosition(probe, state.room.polygon);
 }
 
 function reducer(state: State, action: Action): State {
@@ -73,7 +83,7 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         room: action.room,
-        objects: action.objects,
+        objects: clampAllObjects(action.objects, action.room),
         selectedIds: [],
         hydrated: true,
       };
@@ -82,10 +92,19 @@ function reducer(state: State, action: Action): State {
       return state.hydrated ? state : { ...state, hydrated: true };
 
     case "SET_ROOM":
-      return { ...state, room: action.room };
+      return {
+        ...state,
+        room: action.room,
+        objects: clampAllObjects(state.objects, action.room),
+      };
 
     case "ADD_TABLE": {
-      const { x, y } = spawnPosition(state);
+      const { x, y } = spawnPosition(state, {
+        kind: "table",
+        widthCm: action.widthCm,
+        depthCm: action.depthCm,
+        rotation: 0,
+      });
       const table: TableObject = {
         id: crypto.randomUUID(),
         kind: "table",
@@ -103,7 +122,10 @@ function reducer(state: State, action: Action): State {
     }
 
     case "ADD_CHAIR": {
-      const { x, y } = spawnPosition(state);
+      const { x, y } = spawnPosition(state, {
+        kind: "chair",
+        diameterCm: action.diameterCm,
+      });
       const chair: ChairObject = {
         id: crypto.randomUUID(),
         kind: "chair",
@@ -131,12 +153,13 @@ function reducer(state: State, action: Action): State {
     case "MOVE_SELECTED": {
       if (state.selectedIds.length === 0) return state;
       const selected = new Set(state.selectedIds);
+      const selectedObjects = state.objects.filter((obj) => selected.has(obj.id));
+      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, state.room.polygon);
+      if (dx === 0 && dy === 0) return state;
       return {
         ...state,
         objects: state.objects.map((obj) =>
-          selected.has(obj.id)
-            ? { ...obj, x: obj.x + action.dxCm, y: obj.y + action.dyCm }
-            : obj,
+          selected.has(obj.id) ? { ...obj, x: obj.x + dx, y: obj.y + dy } : obj,
         ),
       };
     }
@@ -193,11 +216,9 @@ export function usePlannerStore() {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as {
-          room: RoomDimensions;
-          objects: SceneObject[];
-        };
-        dispatch({ type: "LOAD", room: saved.room, objects: saved.objects });
+        const saved = JSON.parse(raw) as { room: unknown; objects: SceneObject[] };
+        const room = isValidRoom(saved.room) ? saved.room : DEFAULT_ROOM;
+        dispatch({ type: "LOAD", room, objects: saved.objects ?? [] });
       } else {
         dispatch({ type: "MARK_HYDRATED" });
       }
@@ -221,7 +242,15 @@ export function usePlannerStore() {
   }, [state.hydrated, state.room, state.objects]);
 
   const setRoom = useCallback(
-    (room: RoomDimensions) => dispatch({ type: "SET_ROOM", room }),
+    (room: Room) => dispatch({ type: "SET_ROOM", room }),
+    [],
+  );
+  const setRectangleRoom = useCallback(
+    (widthM: number, heightM: number) => dispatch({ type: "SET_ROOM", room: makeRectangleRoom(widthM, heightM) }),
+    [],
+  );
+  const setPasserelleRoom = useCallback(
+    () => dispatch({ type: "SET_ROOM", room: PASSERELLE_ROOM }),
     [],
   );
   const addTable = useCallback(
@@ -266,6 +295,8 @@ export function usePlannerStore() {
     objects: state.objects,
     selectedIds: state.selectedIds,
     setRoom,
+    setRectangleRoom,
+    setPasserelleRoom,
     addTable,
     addChair,
     removeSelected,
