@@ -6,6 +6,7 @@ import type Konva from "konva";
 import type { Room } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
+import { DimensionLabel } from "./dimension-label";
 
 type RoomProps = {
   room: Room;
@@ -14,6 +15,12 @@ type RoomProps = {
 };
 
 const GRID_STEP_CM = 100; // une ligne de repère par mètre
+
+/** 850 -> "8.5 m", 1200 -> "12 m" */
+function formatMeters(cm: number): string {
+  const meters = (cm / 100).toFixed(1).replace(/\.0$/, "");
+  return `${meters} m`;
+}
 
 export function Room({ room, scale, origin }: RoomProps) {
   const bounds = polygonBounds(room.polygon);
@@ -80,13 +87,34 @@ export function Room({ room, scale, origin }: RoomProps) {
         {verticalLines}
         {horizontalLines}
       </Group>
-      <Text
-        x={8}
-        y={heightPx + 8}
-        text={`${room.widthM} m × ${room.heightM} m`}
-        fontSize={13}
-        fill="#8A7A5C"
-      />
+      {room.dimensionLabels && room.dimensionLabels.length > 0 ? (
+        // la salle est un polygone quelconque : une seule cote "largeur ×
+        // hauteur" de la boîte englobante n'aurait pas de sens, on cote donc
+        // individuellement les segments droits pertinents du contour
+        room.dimensionLabels.map(({ fromIndex, toIndex, side }) => {
+          const fromCm = room.polygon[fromIndex];
+          const toCm = room.polygon[toIndex];
+          if (!fromCm || !toCm) return null;
+          const distanceCm = Math.hypot(toCm.x - fromCm.x, toCm.y - fromCm.y);
+          return (
+            <DimensionLabel
+              key={`${fromIndex}-${toIndex}`}
+              from={pointsPx[fromIndex]}
+              to={pointsPx[toIndex]}
+              side={side}
+              label={formatMeters(distanceCm)}
+            />
+          );
+        })
+      ) : (
+        <Text
+          x={8}
+          y={heightPx + 8}
+          text={`${room.widthM} m × ${room.heightM} m`}
+          fontSize={13}
+          fill="#8A7A5C"
+        />
+      )}
     </Group>
   );
 }

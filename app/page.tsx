@@ -4,7 +4,7 @@ const steps = [
   {
     emoji: "📐",
     title: "Dessine ta salle",
-    text: "Renseigne juste la largeur et la profondeur de ton espace, en mètres. Simple comme bonjour.",
+    text: "Renseigne juste la largeur et la largeur de ton espace, en mètres. Simple comme bonjour.",
   },
   {
     emoji: "🪑",

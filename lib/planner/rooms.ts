@@ -1,5 +1,5 @@
 // lib/planner/rooms.ts
-import type { Room } from "./types";
+import type { DimensionLabel, Room } from "./types";
 import { polygonBounds, rectanglePolygon } from "./geometry";
 
 /** nom affiché à l'utilisateur pour la salle "passerelle" (nom de code interne inchangé) */
@@ -34,6 +34,18 @@ const PASSERELLE_POINTS_M: [number, number][] = [
 /** index (dans PASSERELLE_POINTS_M) du sommet le plus large de la bosse, arrondi à l'affichage */
 const PASSERELLE_CURVED_VERTICES = [4];
 
+/**
+ * Cotes affichées sur le plan : uniquement les trois segments droits qui
+ * donnent la mesure du couloir (largeur en haut, longueur du mur gauche,
+ * largeur en bas) — le reste du contour (bosse, rétrécissement) n'est pas
+ * coté, comme sur le croquis fourni par le client.
+ */
+const PASSERELLE_DIMENSION_LABELS: DimensionLabel[] = [
+  { fromIndex: 0, toIndex: 1, side: "top" }, // (0,0) -> (12,0) : 12 m
+  { fromIndex: 9, toIndex: 0, side: "left" }, // (0,65.5) -> (0,0) : 65.5 m
+  { fromIndex: 8, toIndex: 9, side: "bottom" }, // (8.5,65.5) -> (0,65.5) : 8.5 m
+];
+
 function metersPolygonToCm(points: [number, number][]) {
   return points.map(([x, y]) => ({ x: x * 100, y: y * 100 }));
 }
@@ -42,6 +54,7 @@ function roomFromPolygonM(
   kind: Room["kind"],
   points: [number, number][],
   curvedVertices?: number[],
+  dimensionLabels?: DimensionLabel[],
 ): Room {
   const polygon = metersPolygonToCm(points);
   const bounds = polygonBounds(polygon);
@@ -51,6 +64,7 @@ function roomFromPolygonM(
     widthM: (bounds.maxX - bounds.minX) / 100,
     heightM: (bounds.maxY - bounds.minY) / 100,
     curvedVertices,
+    dimensionLabels,
   };
 }
 
@@ -58,6 +72,7 @@ export const PASSERELLE_ROOM: Room = roomFromPolygonM(
   "passerelle",
   PASSERELLE_POINTS_M,
   PASSERELLE_CURVED_VERTICES,
+  PASSERELLE_DIMENSION_LABELS,
 );
 
 export function makeRectangleRoom(widthM: number, heightM: number): Room {

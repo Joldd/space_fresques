@@ -18,6 +18,22 @@ export type Room = {
    * tracé visuel est arrondi.
    */
   curvedVertices?: number[];
+  /**
+   * Cotes à afficher sur le plan : la salle étant un polygone quelconque et
+   * non un rectangle, une seule dimension "largeur × hauteur" ne suffit pas
+   * à la décrire — on annote plutôt certains segments du contour un par un.
+   */
+  dimensionLabels?: DimensionLabel[];
+};
+
+export type DimensionLabelSide = "top" | "bottom" | "left" | "right";
+
+export type DimensionLabel = {
+  /** indices (dans `polygon`) des deux sommets dont la distance est cotée */
+  fromIndex: number;
+  toIndex: number;
+  /** côté du segment vers lequel décaler la cote, hors du polygone */
+  side: DimensionLabelSide;
 };
 
 export type Rotation = 0 | 90 | 180 | 270;
