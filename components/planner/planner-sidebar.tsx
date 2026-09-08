@@ -1,7 +1,7 @@
 // components/planner/planner-sidebar.tsx
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import type { Room } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
 import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
@@ -162,126 +162,125 @@ export function PlannerSideBar({
           </button>
         </div>
 
-      <Card title="Forme de la salle">
-        {/*
+        <Card title="Forme de la salle">
+          {/*
           Le mode "Rectangle" existe toujours côté code (onSetRectangleRoom,
           formulaire ci-dessous) mais reste caché pour l'instant : seule la
           salle Rue intérieure Saint-Paul est utilisée. À réactiver le jour
           où un autre lieu sera géré par l'outil.
         */}
-        {room.kind === "passerelle" ? (
-          <>
-            <p className="mb-3 rounded-xl bg-[#3F5A45] px-3 py-2 text-sm font-medium text-white">
-              🌉 {PASSERELLE_DISPLAY_NAME}
-            </p>
-            <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
-              Le plan réel de la salle {PASSERELLE_DISPLAY_NAME} : {room.widthM} m ×{" "}
-              {room.heightM} m.
-            </p>
-          </>
-        ) : (
-          <form onSubmit={applyRoom} className="flex flex-col gap-3">
+          {room.kind === "passerelle" ? (
+            <>
+              <p className="mb-3 rounded-xl bg-[#3F5A45] px-3 py-2 text-sm font-medium text-white">
+                🌉 {PASSERELLE_DISPLAY_NAME}
+              </p>
+              <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
+                Le plan réel de la salle {PASSERELLE_DISPLAY_NAME} :{" "}
+                {room.widthM} m × {room.heightM} m.
+              </p>
+            </>
+          ) : (
+            <form onSubmit={applyRoom} className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField
+                  label="Largeur"
+                  value={widthM}
+                  onChange={setWidthM}
+                  min={1}
+                  step={0.5}
+                  suffix="m"
+                />
+                <NumberField
+                  label="Profondeur"
+                  value={heightM}
+                  onChange={setHeightM}
+                  min={1}
+                  step={0.5}
+                  suffix="m"
+                />
+              </div>
+              <button
+                type="submit"
+                className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
+              >
+                Mettre à jour la salle
+              </button>
+              <button
+                type="button"
+                onClick={onSetPasserelleRoom}
+                className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+              >
+                🌉 Revenir à {PASSERELLE_DISPLAY_NAME}
+              </button>
+            </form>
+          )}
+        </Card>
+
+        <Card title="Ajouter une table">
+          <form onSubmit={submitTable} className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
               <NumberField
                 label="Largeur"
-                value={widthM}
-                onChange={setWidthM}
-                min={1}
-                step={0.5}
-                suffix="m"
+                value={tableWidth}
+                onChange={setTableWidth}
+                min={10}
+                suffix="cm"
               />
               <NumberField
                 label="Profondeur"
-                value={heightM}
-                onChange={setHeightM}
-                min={1}
-                step={0.5}
-                suffix="m"
+                value={tableDepth}
+                onChange={setTableDepth}
+                min={10}
+                suffix="cm"
               />
             </div>
             <button
               type="submit"
-              className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
+              className="rounded-xl bg-[#D98E73] text-white text-sm font-medium py-2 hover:bg-[#c97c60] transition-colors"
             >
-              Mettre à jour la salle
+              + Ajouter une table
+            </button>
+          </form>
+        </Card>
+
+        <Card title="Ajouter une zone">
+          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+            Un rectangle coloré et libre pour délimiter une partie du plan.
+            Clique dessus pour la nommer, la recolorer ou la redimensionner.
+          </p>
+          <button
+            type="button"
+            onClick={onAddZone}
+            className="w-full rounded-xl bg-[#6E93C0] text-white text-sm font-medium py-2 hover:bg-[#5c81ae] transition-colors"
+          >
+            + Ajouter une zone
+          </button>
+        </Card>
+
+        <Card title="Exporter le plan">
+          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+            La salle, les tables et les zones, avec leur légende.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onExportJpeg}
+              className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+            >
+              🖼 JPEG
             </button>
             <button
               type="button"
-              onClick={onSetPasserelleRoom}
+              onClick={onExportPdf}
               className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
             >
-              🌉 Revenir à {PASSERELLE_DISPLAY_NAME}
+              📄 PDF
             </button>
-          </form>
-        )}
-      </Card>
-
-      <Card title="Ajouter une table">
-        <form onSubmit={submitTable} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField
-              label="Largeur"
-              value={tableWidth}
-              onChange={setTableWidth}
-              min={10}
-              suffix="cm"
-            />
-            <NumberField
-              label="Profondeur"
-              value={tableDepth}
-              onChange={setTableDepth}
-              min={10}
-              suffix="cm"
-            />
           </div>
-          <button
-            type="submit"
-            className="rounded-xl bg-[#D98E73] text-white text-sm font-medium py-2 hover:bg-[#c97c60] transition-colors"
-          >
-            + Ajouter une table
-          </button>
-        </form>
-      </Card>
+        </Card>
 
-      <Card title="Ajouter une zone">
-        <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
-          Un rectangle coloré et libre pour
-          délimiter une partie du plan. Clique dessus pour la nommer, la
-          recolorer ou la redimensionner.
-        </p>
-        <button
-          type="button"
-          onClick={onAddZone}
-          className="w-full rounded-xl bg-[#6E93C0] text-white text-sm font-medium py-2 hover:bg-[#5c81ae] transition-colors"
-        >
-          + Ajouter une zone
-        </button>
-      </Card>
-
-      <Card title="Exporter le plan">
-        <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
-          La salle, les tables et les zones, avec leur légende.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onExportJpeg}
-            className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
-          >
-            🖼 JPEG
-          </button>
-          <button
-            type="button"
-            onClick={onExportPdf}
-            className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
-          >
-            📄 PDF
-          </button>
-        </div>
-      </Card>
-
-      {/* Pas besoin de chaises pour l'instant */}
-      {/* <Card title="Ajouter une chaise">
+        {/* Pas besoin de chaises pour l'instant */}
+        {/* <Card title="Ajouter une chaise">
         <form onSubmit={submitChair} className="flex flex-col gap-3">
           <NumberField label="Diamètre" value={chairDiameter} onChange={setChairDiameter} min={10} suffix="cm" />
           <button
@@ -293,49 +292,49 @@ export function PlannerSideBar({
         </form>
       </Card> */}
 
-      {selectedCount > 0 && !hasContextPanel && (
-        <Card title="Sélection">
-          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
-            {selectedCount} élément{selectedCount > 1 ? "s" : ""} sélectionné
-            {selectedCount > 1 ? "s" : ""}
-          </p>
-          <div className="flex gap-2">
-            {hasSelectedTable && (
+        {selectedCount > 0 && !hasContextPanel && (
+          <Card title="Sélection">
+            <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+              {selectedCount} élément{selectedCount > 1 ? "s" : ""} sélectionné
+              {selectedCount > 1 ? "s" : ""}
+            </p>
+            <div className="flex gap-2">
+              {hasSelectedTable && (
+                <button
+                  onClick={onRotate}
+                  className="flex-1 rounded-xl bg-[#7A9E7E] text-white text-sm font-medium py-2 hover:bg-[#6b8f6f] transition-colors"
+                >
+                  ↻ Pivoter
+                </button>
+              )}
               <button
-                onClick={onRotate}
-                className="flex-1 rounded-xl bg-[#7A9E7E] text-white text-sm font-medium py-2 hover:bg-[#6b8f6f] transition-colors"
+                onClick={onDelete}
+                className="flex-1 rounded-xl bg-[#D9765F] text-white text-sm font-medium py-2 hover:bg-[#c76650] transition-colors"
               >
-                ↻ Pivoter
+                🗑 Supprimer
               </button>
-            )}
-            <button
-              onClick={onDelete}
-              className="flex-1 rounded-xl bg-[#D9765F] text-white text-sm font-medium py-2 hover:bg-[#c76650] transition-colors"
-            >
-              🗑 Supprimer
-            </button>
-          </div>
-        </Card>
-      )}
+            </div>
+          </Card>
+        )}
 
-      <div className="mt-auto text-xs text-[#8A8368] dark:text-[#8FA090] leading-relaxed">
-        <p className="font-medium mb-1">Astuces</p>
-        <ul className="list-disc list-inside space-y-0.5">
-          <li>
-            Clic + glisser sur une zone vide pour sélectionner plusieurs
-            éléments
-          </li>
-          <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
-          <li>Touche R pour pivoter, Suppr pour supprimer</li>
-          <li>Ctrl/Cmd + C puis V pour copier-coller</li>
-          <li>Ctrl/Cmd + Z pour annuler la dernière action</li>
-          <li>Impossible de sortir une table ou une chaise de la salle</li>
-          <li>
-            Les zones, elles, peuvent dépasser du contour et se
-            redimensionner librement, clique dessus pour les régler
-          </li>
-        </ul>
-      </div>
+        <div className="mt-auto text-xs text-[#8A8368] dark:text-[#8FA090] leading-relaxed">
+          <p className="font-medium mb-1">Astuces</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>
+              Clic + glisser sur une zone vide pour sélectionner plusieurs
+              éléments
+            </li>
+            <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
+            <li>Touche R pour pivoter, Suppr pour supprimer</li>
+            <li>Ctrl/Cmd + C puis V pour copier-coller</li>
+            <li>Ctrl/Cmd + Z pour annuler la dernière action</li>
+            <li>Impossible de sortir une table ou une chaise de la salle</li>
+            <li>
+              Les zones, elles, peuvent dépasser du contour et se redimensionner
+              librement, clique dessus pour les régler
+            </li>
+          </ul>
+        </div>
       </aside>
     </>
   );

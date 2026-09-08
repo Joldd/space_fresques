@@ -83,3 +83,13 @@ export type ZoneObject = {
 export type Point = { x: number; y: number };
 
 export type RectArea = { x: number; y: number; width: number; height: number };
+
+export type Animator = {
+  [key: string]: string;
+};
+
+export type GoogleSheetsResponse = {
+  range: string;
+  majorDimension: string;
+  values?: string[][];
+};
