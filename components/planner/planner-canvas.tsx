@@ -8,11 +8,18 @@ import { PlannerSideBar } from "./planner-sidebar";
 import { Table } from "./table";
 import { Chair } from "./chair";
 import { Room } from "./room";
+import { Zone } from "./zone";
+import { ZonePanel } from "./zone-panel";
+import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
 import { computeScale, roomOrigin } from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import type { RectArea, SceneObject } from "@/lib/planner/types";
+
+/** largeur estimée du menu contextuel d'une zone, pour éviter qu'il ne déborde du canvas */
+const ZONE_PANEL_WIDTH_PX = 240;
+const ZONE_PANEL_MARGIN_PX = 10;
 
 function isTypingInField(): boolean {
   const el = document.activeElement;
@@ -68,7 +75,9 @@ export function PlannerCanvas() {
   const {
     room,
     objects,
+    zones,
     selectedIds,
+    selectedZoneId,
     setRectangleRoom,
     setPasserelleRoom,
     addTable,
@@ -79,6 +88,11 @@ export function PlannerCanvas() {
     select,
     selectRect,
     clearSelection,
+    addZone,
+    updateZone,
+    removeZone,
+    removeSelectedZone,
+    selectZone,
   } = store;
 
   const [stageSize, setStageSize] = useState(() => ({
@@ -208,7 +222,8 @@ export function PlannerCanvas() {
       if (isTypingInField()) return;
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        removeSelected();
+        if (selectedZoneId) removeSelectedZone();
+        else removeSelected();
       } else if (e.key === "r" || e.key === "R") {
         e.preventDefault();
         rotateSelectedTables();
@@ -218,12 +233,29 @@ export function PlannerCanvas() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [removeSelected, rotateSelectedTables, clearSelection]);
+  }, [removeSelected, rotateSelectedTables, clearSelection, removeSelectedZone, selectedZoneId]);
 
   const selectedCount = selectedIds.length;
   const hasSelectedTable = objects.some(
     (obj) => obj.kind === "table" && selectedIds.includes(obj.id),
   );
+  const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
+
+  // ancre du menu contextuel de la zone sélectionnée : à droite de la zone,
+  // ou à gauche si ça déborderait du canvas
+  let zonePanelPos: { x: number; y: number } | null = null;
+  if (selectedZone) {
+    const zoneRightPx = origin.x + (selectedZone.x + selectedZone.widthCm) * scale;
+    const zoneLeftPx = origin.x + selectedZone.x * scale;
+    const zoneTopPx = origin.y + selectedZone.y * scale;
+    const overflowsRight = zoneRightPx + ZONE_PANEL_MARGIN_PX + ZONE_PANEL_WIDTH_PX > stageSize.width;
+    zonePanelPos = {
+      x: overflowsRight
+        ? Math.max(zoneLeftPx - ZONE_PANEL_MARGIN_PX - ZONE_PANEL_WIDTH_PX, ZONE_PANEL_MARGIN_PX)
+        : zoneRightPx + ZONE_PANEL_MARGIN_PX,
+      y: Math.max(zoneTopPx, ZONE_PANEL_MARGIN_PX),
+    };
+  }
 
   return (
     <div className="flex h-[calc(100vh-56px)] bg-[#EFE7D6] dark:bg-[#1B1F1A]">
@@ -233,6 +265,7 @@ export function PlannerCanvas() {
         onSetPasserelleRoom={setPasserelleRoom}
         onAddTable={addTable}
         onAddChair={addChair}
+        onAddZone={addZone}
         selectedCount={selectedCount}
         hasSelectedTable={hasSelectedTable}
         onRotate={rotateSelectedTables}
@@ -248,6 +281,17 @@ export function PlannerCanvas() {
         >
           <Layer>
             <Room room={room} scale={scale} origin={origin} />
+            {zones.map((zone) => (
+              <Zone
+                key={zone.id}
+                zone={zone}
+                scale={scale}
+                origin={origin}
+                selected={zone.id === selectedZoneId}
+                onSelect={selectZone}
+                onChange={updateZone}
+              />
+            ))}
             {objects.map((obj) =>
               obj.kind === "table" ? (
                 <Table
@@ -278,6 +322,21 @@ export function PlannerCanvas() {
             {selectionArea && <SelectionRect area={selectionArea} />}
           </Layer>
         </Stage>
+
+        <ZoneLegend zones={zones} />
+
+        {selectedZone && zonePanelPos && (
+          <ZonePanel
+            key={selectedZone.id}
+            zone={selectedZone}
+            x={zonePanelPos.x}
+            y={zonePanelPos.y}
+            onRename={(name) => updateZone(selectedZone.id, { name })}
+            onRecolor={(color) => updateZone(selectedZone.id, { color })}
+            onDelete={() => removeZone(selectedZone.id)}
+            onClose={() => selectZone(null)}
+          />
+        )}
 
         {selectedCount > 0 && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-black/10 bg-white/90 dark:bg-[#232823]/90 dark:border-white/10 px-3 py-2 shadow-lg backdrop-blur">

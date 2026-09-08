@@ -11,6 +11,7 @@ type PlannerSideBarProps = {
   onSetPasserelleRoom: () => void;
   onAddTable: (widthCm: number, depthCm: number) => void;
   onAddChair: (diameterCm: number) => void;
+  onAddZone: () => void;
   selectedCount: number;
   hasSelectedTable: boolean;
   onRotate: () => void;
@@ -78,6 +79,7 @@ export function PlannerSideBar({
   onSetPasserelleRoom,
   onAddTable,
   onAddChair,
+  onAddZone,
   selectedCount,
   hasSelectedTable,
   onRotate,
@@ -209,6 +211,21 @@ export function PlannerSideBar({
         </form>
       </Card>
 
+      <Card title="Ajouter une zone">
+        <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+          Un rectangle coloré et libre pour
+          délimiter une partie du plan. Clique dessus pour la nommer, la
+          recolorer ou la redimensionner.
+        </p>
+        <button
+          type="button"
+          onClick={onAddZone}
+          className="w-full rounded-xl bg-[#6E93C0] text-white text-sm font-medium py-2 hover:bg-[#5c81ae] transition-colors"
+        >
+          + Ajouter une zone
+        </button>
+      </Card>
+
       {/* Pas besoin de chaises pour l'instant */}
       {/* <Card title="Ajouter une chaise">
         <form onSubmit={submitChair} className="flex flex-col gap-3">
@@ -257,6 +274,10 @@ export function PlannerSideBar({
           <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
           <li>Touche R pour pivoter, Suppr pour supprimer</li>
           <li>Impossible de sortir une table ou une chaise de la salle</li>
+          <li>
+            Les zones, elles, peuvent dépasser du contour et se
+            redimensionner librement, clique dessus pour les régler
+          </li>
         </ul>
       </div>
     </aside>

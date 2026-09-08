@@ -44,6 +44,24 @@ export type ChairObject = {
 
 export type SceneObject = TableObject | ChairObject;
 
+/**
+ * Zone rectangulaire libre posée sur le plan (ex. "bar", "scène", "zone
+ * photo"). Contrairement aux tables/chaises, elle n'est pas contrainte par
+ * le contour de la salle : elle peut dépasser, se chevaucher, etc.
+ */
+export type ZoneObject = {
+  id: string;
+  kind: "zone";
+  /** coin haut-gauche de la zone, en cm, dans le repère de la salle */
+  x: number;
+  y: number;
+  widthCm: number;
+  heightCm: number;
+  /** couleur pleine (hex) ; affichée avec une transparence à l'écran */
+  color: string;
+  name: string;
+};
+
 export type Point = { x: number; y: number };
 
 export type RectArea = { x: number; y: number; width: number; height: number };
