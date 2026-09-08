@@ -16,6 +16,8 @@ type TablePanelProps = {
   onRotate: () => void;
   onDelete: () => void;
   onClose: () => void;
+  /** appelé une seule fois au début d'une édition (focus d'un champ, clic sur une pastille) — empile l'état pour Ctrl+Z */
+  onBeginChange: () => void;
 };
 
 /**
@@ -24,7 +26,17 @@ type TablePanelProps = {
  * table ne se redimensionne pas à la souris (contrairement à une zone), on
  * ne peut que la déplacer et ajuster ses dimensions ici.
  */
-export function TablePanel({ table, x, y, onResize, onRecolor, onRotate, onDelete, onClose }: TablePanelProps) {
+export function TablePanel({
+  table,
+  x,
+  y,
+  onResize,
+  onRecolor,
+  onRotate,
+  onDelete,
+  onClose,
+  onBeginChange,
+}: TablePanelProps) {
   const panelRef = useCloseOnOutsideClick<HTMLDivElement>(onClose);
   const color = table.color ?? DEFAULT_TABLE_COLOR;
 
@@ -42,6 +54,7 @@ export function TablePanel({ table, x, y, onResize, onRecolor, onRotate, onDelet
         heightLabel="Profondeur"
         min={0.2}
         onResize={(widthM, depthM) => onResize(Math.round(widthM * 100), Math.round(depthM * 100))}
+        onBeginEdit={onBeginChange}
       />
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -49,7 +62,10 @@ export function TablePanel({ table, x, y, onResize, onRecolor, onRotate, onDelet
           <button
             key={c}
             type="button"
-            onClick={() => onRecolor(c)}
+            onClick={() => {
+              onBeginChange();
+              onRecolor(c);
+            }}
             aria-label={`Couleur ${c}`}
             title={c}
             className="h-6 w-6 shrink-0 rounded-full border-2 transition-transform hover:scale-110"
@@ -59,6 +75,7 @@ export function TablePanel({ table, x, y, onResize, onRecolor, onRotate, onDelet
         <input
           type="color"
           value={color}
+          onFocus={onBeginChange}
           onChange={(e) => onRecolor(e.target.value)}
           title="Couleur personnalisée"
           className="h-6 w-7 shrink-0 cursor-pointer rounded border border-black/10 dark:border-white/20 bg-transparent p-0"

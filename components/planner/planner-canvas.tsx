@@ -133,6 +133,10 @@ export function PlannerCanvas() {
     removeSelectedZone,
     selectZone,
     updateTable,
+    pushHistory,
+    undo,
+    copySelection,
+    paste,
   } = store;
 
   // en dessous de "md" la sidebar devient un tiroir superposé (voir
@@ -260,6 +264,7 @@ export function PlannerCanvas() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (isTypingInField()) return;
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         if (selectedZoneId) removeSelectedZone();
@@ -269,11 +274,29 @@ export function PlannerCanvas() {
         rotateSelectedTables();
       } else if (e.key === "Escape") {
         clearSelection();
+      } else if (ctrlOrCmd && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        undo();
+      } else if (ctrlOrCmd && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        copySelection();
+      } else if (ctrlOrCmd && (e.key === "v" || e.key === "V")) {
+        e.preventDefault();
+        paste();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [removeSelected, rotateSelectedTables, clearSelection, removeSelectedZone, selectedZoneId]);
+  }, [
+    removeSelected,
+    rotateSelectedTables,
+    clearSelection,
+    removeSelectedZone,
+    selectedZoneId,
+    undo,
+    copySelection,
+    paste,
+  ]);
 
   const selectedCount = selectedIds.length;
   const hasSelectedTable = objects.some(
@@ -369,6 +392,7 @@ export function PlannerCanvas() {
                 selected={zone.id === selectedZoneId}
                 onSelect={selectZone}
                 onChange={updateZone}
+                onBeginChange={pushHistory}
               />
             ))}
             {objects.map((obj) =>
@@ -383,6 +407,7 @@ export function PlannerCanvas() {
                   getDragGroup={getDragGroup}
                   onPointerDown={handleObjectPointerDown}
                   onDragDelta={handleDragDelta}
+                  onDragBegin={pushHistory}
                 />
               ) : (
                 <Chair
@@ -395,6 +420,7 @@ export function PlannerCanvas() {
                   getDragGroup={getDragGroup}
                   onPointerDown={handleObjectPointerDown}
                   onDragDelta={handleDragDelta}
+                  onDragBegin={pushHistory}
                 />
               ),
             )}
@@ -415,6 +441,7 @@ export function PlannerCanvas() {
             onRecolor={(color) => updateZone(selectedZone.id, { color })}
             onDelete={() => removeZone(selectedZone.id)}
             onClose={() => selectZone(null)}
+            onBeginChange={pushHistory}
           />
         )}
 
@@ -429,6 +456,7 @@ export function PlannerCanvas() {
             onRotate={rotateSelectedTables}
             onDelete={removeSelected}
             onClose={clearSelection}
+            onBeginChange={pushHistory}
           />
         )}
 

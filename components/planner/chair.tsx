@@ -16,6 +16,8 @@ type ChairProps = {
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
   onDragDelta: (dxCm: number, dyCm: number) => void;
+  /** appelé une seule fois au début d'un drag — empile l'état pour Ctrl+Z */
+  onDragBegin: () => void;
 };
 
 export function Chair({
@@ -27,6 +29,7 @@ export function Chair({
   getDragGroup,
   onPointerDown,
   onDragDelta,
+  onDragBegin,
 }: ChairProps) {
   const radiusPx = cmToPx(chair.diameterCm, scale) / 2;
   const x = origin.x + cmToPx(chair.x, scale);
@@ -39,6 +42,7 @@ export function Chair({
     getDragGroup,
     onPointerDown,
     onDragDelta,
+    onDragBegin,
   });
 
   return (

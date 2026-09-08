@@ -23,6 +23,7 @@ export function useConstrainedDrag({
   getDragGroup,
   onPointerDown,
   onDragDelta,
+  onDragBegin,
 }: {
   id: string;
   scale: number;
@@ -31,6 +32,8 @@ export function useConstrainedDrag({
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
   onDragDelta: (dxCm: number, dyCm: number) => void;
+  /** appelé une seule fois au tout début du drag (avant le premier déplacement) — pour Ctrl+Z */
+  onDragBegin?: () => void;
 }) {
   const dragGroupRef = useRef<SceneObject[]>([]);
   const dragStartPxRef = useRef<Point>({ x: 0, y: 0 });
@@ -42,6 +45,7 @@ export function useConstrainedDrag({
   }
 
   function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
+    onDragBegin?.();
     const pos = { x: e.target.x(), y: e.target.y() };
     dragStartPxRef.current = pos;
     lastPointPxRef.current = pos;

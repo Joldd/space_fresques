@@ -11,6 +11,8 @@ type SizeFieldsProps = {
   /** taille minimale acceptée, en mètres */
   min: number;
   onResize: (widthM: number, heightM: number) => void;
+  /** appelé à la prise de focus d'un des deux champs — empile l'état pour Ctrl+Z une fois par session d'édition, pas à chaque frappe */
+  onBeginEdit: () => void;
 };
 
 /** 2 -> "2", 2.5 -> "2.5" (pas de zéro final superflu) */
@@ -47,7 +49,7 @@ function useSyncedDraft(valueM: number) {
  * Deux champs numériques liés (largeur/hauteur, en mètres) pour un menu
  * contextuel de zone ou de table.
  */
-export function SizeFields({ widthM, heightM, widthLabel, heightLabel, min, onResize }: SizeFieldsProps) {
+export function SizeFields({ widthM, heightM, widthLabel, heightLabel, min, onResize, onBeginEdit }: SizeFieldsProps) {
   const [widthText, setWidthText] = useSyncedDraft(widthM);
   const [heightText, setHeightText] = useSyncedDraft(heightM);
 
@@ -71,6 +73,7 @@ export function SizeFields({ widthM, heightM, widthLabel, heightLabel, min, onRe
           min={min}
           step={0.1}
           value={widthText}
+          onFocus={onBeginEdit}
           onChange={(e) => handleWidthChange(e.target.value)}
           onBlur={() => setWidthText(formatMeters(widthM))}
           onKeyDown={(e) => {
@@ -86,6 +89,7 @@ export function SizeFields({ widthM, heightM, widthLabel, heightLabel, min, onRe
           min={min}
           step={0.1}
           value={heightText}
+          onFocus={onBeginEdit}
           onChange={(e) => handleHeightChange(e.target.value)}
           onBlur={() => setHeightText(formatMeters(heightM))}
           onKeyDown={(e) => {

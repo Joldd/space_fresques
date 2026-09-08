@@ -327,6 +327,8 @@ export function PlannerSideBar({
           </li>
           <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
           <li>Touche R pour pivoter, Suppr pour supprimer</li>
+          <li>Ctrl/Cmd + C puis V pour copier-coller</li>
+          <li>Ctrl/Cmd + Z pour annuler la dernière action</li>
           <li>Impossible de sortir une table ou une chaise de la salle</li>
           <li>
             Les zones, elles, peuvent dépasser du contour et se

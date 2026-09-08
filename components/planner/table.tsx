@@ -17,6 +17,8 @@ type TableProps = {
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
   onDragDelta: (dxCm: number, dyCm: number) => void;
+  /** appelé une seule fois au début d'un drag — empile l'état pour Ctrl+Z */
+  onDragBegin: () => void;
 };
 
 export function Table({
@@ -28,6 +30,7 @@ export function Table({
   getDragGroup,
   onPointerDown,
   onDragDelta,
+  onDragBegin,
 }: TableProps) {
   const widthPx = cmToPx(table.widthCm, scale);
   const depthPx = cmToPx(table.depthCm, scale);
@@ -42,6 +45,7 @@ export function Table({
     getDragGroup,
     onPointerDown,
     onDragDelta,
+    onDragBegin,
   });
 
   return (

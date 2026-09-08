@@ -18,6 +18,8 @@ type ZonePanelProps = {
   onRecolor: (color: string) => void;
   onDelete: () => void;
   onClose: () => void;
+  /** appelé une seule fois au début d'une édition (focus d'un champ, clic sur une pastille) — empile l'état pour Ctrl+Z */
+  onBeginChange: () => void;
 };
 
 /**
@@ -26,7 +28,17 @@ type ZonePanelProps = {
  * passer d'une zone à l'autre remonte alors le panneau et réinitialise ce
  * brouillon de nom, sans effet de synchronisation supplémentaire.
  */
-export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete, onClose }: ZonePanelProps) {
+export function ZonePanel({
+  zone,
+  x,
+  y,
+  onRename,
+  onResize,
+  onRecolor,
+  onDelete,
+  onClose,
+  onBeginChange,
+}: ZonePanelProps) {
   const [name, setName] = useState(zone.name);
   const panelRef = useCloseOnOutsideClick<HTMLDivElement>(onClose);
 
@@ -46,6 +58,7 @@ export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete,
       <input
         type="text"
         value={name}
+        onFocus={onBeginChange}
         onChange={(e) => setName(e.target.value)}
         onBlur={commitName}
         onKeyDown={(e) => {
@@ -62,6 +75,7 @@ export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete,
         heightLabel="Hauteur"
         min={MIN_ZONE_SIZE_CM / 100}
         onResize={(widthM, heightM) => onResize(Math.round(widthM * 100), Math.round(heightM * 100))}
+        onBeginEdit={onBeginChange}
       />
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -69,7 +83,10 @@ export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete,
           <button
             key={c}
             type="button"
-            onClick={() => onRecolor(c)}
+            onClick={() => {
+              onBeginChange();
+              onRecolor(c);
+            }}
             aria-label={`Couleur ${c}`}
             title={c}
             className="h-6 w-6 shrink-0 rounded-full border-2 transition-transform hover:scale-110"
@@ -79,6 +96,7 @@ export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete,
         <input
           type="color"
           value={zone.color}
+          onFocus={onBeginChange}
           onChange={(e) => onRecolor(e.target.value)}
           title="Couleur personnalisée"
           className="h-6 w-7 shrink-0 cursor-pointer rounded border border-black/10 dark:border-white/20 bg-transparent p-0"

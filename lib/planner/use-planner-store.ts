@@ -20,6 +20,10 @@ export const DEFAULT_TABLE = { widthCm: 200, depthCm: 300 };
 export const DEFAULT_CHAIR = { diameterCm: 80 };
 /** en dessous, une table devient trop petite pour être maniable */
 const MIN_TABLE_SIZE_CM = 20;
+/** nombre d'états conservés pour Ctrl+Z */
+const MAX_HISTORY = 50;
+/** décalage appliqué à un collage, pour qu'il ne tombe pas exactement sur l'original */
+const PASTE_OFFSET_CM = 30;
 
 type State = {
   room: Room;
@@ -30,7 +34,14 @@ type State = {
   selectedZoneId: string | null;
   /** true dès que la lecture du localStorage a été tentée (succès ou non) */
   hydrated: boolean;
+  /** états antérieurs pour Ctrl+Z — le plus récent en dernier */
+  past: HistorySnapshot[];
+  /** dernier élément copié (Ctrl+C), en mémoire uniquement (pas persisté) */
+  clipboard: ClipboardData | null;
 };
+
+type HistorySnapshot = { room: Room; objects: SceneObject[]; zones: ZoneObject[] };
+type ClipboardData = { objects: SceneObject[]; zones: ZoneObject[] };
 
 type ZonePatch = Partial<Omit<ZoneObject, "id" | "kind">>;
 
@@ -51,7 +62,11 @@ type Action =
   | { type: "REMOVE_ZONE"; id: string }
   | { type: "REMOVE_SELECTED_ZONE" }
   | { type: "SELECT_ZONE"; id: string | null }
-  | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">> };
+  | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">> }
+  | { type: "PUSH_HISTORY" }
+  | { type: "UNDO" }
+  | { type: "COPY_SELECTION" }
+  | { type: "PASTE" };
 
 function nextRotation(rotation: Rotation): Rotation {
   return ((rotation + 90) % 360) as Rotation;
@@ -76,6 +91,16 @@ function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
     const { x, y } = clampObjectPosition(obj, room.polygon);
     return x === obj.x && y === obj.y ? obj : { ...obj, x, y };
   });
+}
+
+/**
+ * Empile l'état courant (avant la modification en cours) sur la pile
+ * d'annulation, plafonnée à MAX_HISTORY entrées. À appeler avec l'état
+ * *avant* changement — jamais avec le nouvel état en cours de construction.
+ */
+function withHistory(state: State): HistorySnapshot[] {
+  const next = [...state.past, { room: state.room, objects: state.objects, zones: state.zones }];
+  return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
 }
 
 type Footprint = Omit<TableObject, "id" | "x" | "y"> | Omit<ChairObject, "id" | "x" | "y">;
@@ -123,6 +148,8 @@ function reducer(state: State, action: Action): State {
         selectedIds: [],
         selectedZoneId: null,
         hydrated: true,
+        past: [],
+        clipboard: null,
       };
 
     case "MARK_HYDRATED":
@@ -131,6 +158,7 @@ function reducer(state: State, action: Action): State {
     case "SET_ROOM":
       return {
         ...state,
+        past: withHistory(state),
         room: action.room,
         objects: clampAllObjects(state.objects, action.room),
       };
@@ -154,6 +182,7 @@ function reducer(state: State, action: Action): State {
       };
       return {
         ...state,
+        past: withHistory(state),
         objects: [...state.objects, table],
         selectedIds: [table.id],
         selectedZoneId: null,
@@ -174,6 +203,7 @@ function reducer(state: State, action: Action): State {
       };
       return {
         ...state,
+        past: withHistory(state),
         objects: [...state.objects, chair],
         selectedIds: [chair.id],
         selectedZoneId: null,
@@ -185,6 +215,7 @@ function reducer(state: State, action: Action): State {
       const selected = new Set(state.selectedIds);
       return {
         ...state,
+        past: withHistory(state),
         objects: state.objects.filter((obj) => !selected.has(obj.id)),
         selectedIds: [],
       };
@@ -208,6 +239,7 @@ function reducer(state: State, action: Action): State {
       const selected = new Set(state.selectedIds);
       return {
         ...state,
+        past: withHistory(state),
         objects: state.objects.map((obj) =>
           obj.kind === "table" && selected.has(obj.id)
             ? { ...obj, rotation: nextRotation(obj.rotation) }
@@ -253,6 +285,7 @@ function reducer(state: State, action: Action): State {
       };
       return {
         ...state,
+        past: withHistory(state),
         zones: [...state.zones, zone],
         selectedZoneId: zone.id,
         selectedIds: [],
@@ -276,6 +309,7 @@ function reducer(state: State, action: Action): State {
     case "REMOVE_ZONE":
       return {
         ...state,
+        past: withHistory(state),
         zones: state.zones.filter((z) => z.id !== action.id),
         selectedZoneId: state.selectedZoneId === action.id ? null : state.selectedZoneId,
       };
@@ -285,6 +319,7 @@ function reducer(state: State, action: Action): State {
         ? state
         : {
             ...state,
+            past: withHistory(state),
             zones: state.zones.filter((z) => z.id !== state.selectedZoneId),
             selectedZoneId: null,
           };
@@ -314,6 +349,66 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    // déplacement (drag) et redimensionnement (poignées de zone, champs de
+    // dimensions des menus contextuels) dispatchent en continu pendant le
+    // geste — c'est à l'appelant de dispatcher PUSH_HISTORY une seule fois,
+    // au tout début du geste, pour qu'un Ctrl+Z annule le geste entier
+    case "PUSH_HISTORY":
+      return { ...state, past: withHistory(state) };
+
+    case "UNDO": {
+      if (state.past.length === 0) return state;
+      const previous = state.past[state.past.length - 1];
+      return {
+        ...state,
+        room: previous.room,
+        objects: previous.objects,
+        zones: previous.zones,
+        past: state.past.slice(0, -1),
+        selectedIds: [],
+        selectedZoneId: null,
+      };
+    }
+
+    case "COPY_SELECTION": {
+      if (state.selectedZoneId) {
+        const zone = state.zones.find((z) => z.id === state.selectedZoneId);
+        return zone ? { ...state, clipboard: { objects: [], zones: [zone] } } : state;
+      }
+      if (state.selectedIds.length > 0) {
+        const selected = new Set(state.selectedIds);
+        const objects = state.objects.filter((o) => selected.has(o.id));
+        return objects.length > 0 ? { ...state, clipboard: { objects, zones: [] } } : state;
+      }
+      return state;
+    }
+
+    case "PASTE": {
+      const clip = state.clipboard;
+      if (!clip || (clip.objects.length === 0 && clip.zones.length === 0)) return state;
+
+      const newObjects: SceneObject[] = clip.objects.map((o) => {
+        const candidate = { ...o, id: crypto.randomUUID(), x: o.x + PASTE_OFFSET_CM, y: o.y + PASTE_OFFSET_CM };
+        const { x, y } = clampObjectPosition(candidate, state.room.polygon);
+        return { ...candidate, x, y };
+      });
+      const newZones: ZoneObject[] = clip.zones.map((z) => ({
+        ...z,
+        id: crypto.randomUUID(),
+        x: z.x + PASTE_OFFSET_CM,
+        y: z.y + PASTE_OFFSET_CM,
+      }));
+
+      return {
+        ...state,
+        past: withHistory(state),
+        objects: [...state.objects, ...newObjects],
+        zones: [...state.zones, ...newZones],
+        selectedIds: newObjects.map((o) => o.id),
+        selectedZoneId: newZones[0]?.id ?? null,
+      };
+    }
+
     default:
       return state;
   }
@@ -327,6 +422,8 @@ function initialState(): State {
     selectedIds: [],
     selectedZoneId: null,
     hydrated: false,
+    past: [],
+    clipboard: null,
   };
 }
 
@@ -440,6 +537,10 @@ export function usePlannerStore() {
       dispatch({ type: "UPDATE_TABLE", id, patch }),
     [],
   );
+  const pushHistory = useCallback(() => dispatch({ type: "PUSH_HISTORY" }), []);
+  const undo = useCallback(() => dispatch({ type: "UNDO" }), []);
+  const copySelection = useCallback(() => dispatch({ type: "COPY_SELECTION" }), []);
+  const paste = useCallback(() => dispatch({ type: "PASTE" }), []);
 
   return {
     room: state.room,
@@ -447,6 +548,8 @@ export function usePlannerStore() {
     zones: state.zones,
     selectedIds: state.selectedIds,
     selectedZoneId: state.selectedZoneId,
+    canUndo: state.past.length > 0,
+    canPaste: state.clipboard !== null,
     setRoom,
     setRectangleRoom,
     setPasserelleRoom,
@@ -464,6 +567,10 @@ export function usePlannerStore() {
     removeSelectedZone,
     selectZone,
     updateTable,
+    pushHistory,
+    undo,
+    copySelection,
+    paste,
   };
 }
 

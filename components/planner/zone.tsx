@@ -19,6 +19,8 @@ type ZoneProps = {
   selected: boolean;
   onSelect: (id: string) => void;
   onChange: (id: string, patch: ZonePatch) => void;
+  /** appelé une seule fois au début d'un déplacement/redimensionnement — empile l'état pour Ctrl+Z */
+  onBeginChange: () => void;
 };
 
 /**
@@ -26,7 +28,7 @@ type ZoneProps = {
  * par le contour de la salle, contrairement aux tables/chaises) : couleur
  * pleine mais semi-transparente pour laisser voir ce qu'il y a derrière.
  */
-export function Zone({ zone, scale, origin, selected, onSelect, onChange }: ZoneProps) {
+export function Zone({ zone, scale, origin, selected, onSelect, onChange, onBeginChange }: ZoneProps) {
   const rectRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
@@ -59,12 +61,14 @@ export function Zone({ zone, scale, origin, selected, onSelect, onChange }: Zone
         onMouseDown={() => onSelect(zone.id)}
         onMouseEnter={(e) => setCanvasCursor(e, "pointer")}
         onMouseLeave={(e) => setCanvasCursor(e, "default")}
+        onDragStart={onBeginChange}
         onDragEnd={(e) => {
           onChange(zone.id, {
             x: pxToCm(e.target.x() - origin.x, scale),
             y: pxToCm(e.target.y() - origin.y, scale),
           });
         }}
+        onTransformStart={onBeginChange}
         onTransformEnd={() => {
           const node = rectRef.current;
           if (!node) return;
