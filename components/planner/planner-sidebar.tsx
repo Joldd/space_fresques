@@ -17,6 +17,14 @@ type PlannerSideBarProps = {
   hasSelectedTable: boolean;
   onRotate: () => void;
   onDelete: () => void;
+  /**
+   * En dessous du breakpoint "md", la sidebar devient un tiroir superposé
+   * (voir SIDEBAR_BREAKPOINT_PX) : `open` contrôle sa visibilité et `onClose`
+   * la referme (bouton dédié, ou tap sur le fond assombri derrière elle).
+   * Sans effet à partir de "md", où elle reste toujours affichée en colonne.
+   */
+  open: boolean;
+  onClose: () => void;
 };
 
 function Card({
@@ -85,6 +93,8 @@ export function PlannerSideBar({
   hasSelectedTable,
   onRotate,
   onDelete,
+  open,
+  onClose,
 }: PlannerSideBarProps) {
   const [widthM, setWidthM] = useState(
     room.kind === "rectangle" ? room.widthM : DEFAULT_CUSTOM_WIDTH_M,
@@ -112,15 +122,38 @@ export function PlannerSideBar({
   }
 
   return (
-    <aside className="w-85 shrink-0 h-full overflow-y-auto bg-[#F6F1E7]/80 dark:bg-[#171a16] border-r border-black/5 dark:border-white/10 p-4 flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold text-[#3F5A45] dark:text-[#B9D3BC]">
-          🌿 Plan de salle
-        </h1>
-        <p className="text-xs text-[#8A8368] dark:text-[#8FA090] mt-1">
-          Installe ta salle à ton rythme : dimensions, tables, chaises.
-        </p>
-      </div>
+    <>
+      {/* fond assombri derrière le tiroir mobile ; absent (et sans effet) à partir de "md" */}
+      {open && (
+        <div
+          aria-hidden
+          onClick={onClose}
+          className="fixed inset-0 top-14 z-30 bg-black/40 md:hidden"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 top-14 left-0 z-40 w-85 max-w-[88vw] shrink-0 overflow-y-auto bg-[#F6F1E7]/95 dark:bg-[#171a16] border-r border-black/5 dark:border-white/10 p-4 flex flex-col gap-4 shadow-2xl transition-transform duration-200 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        } md:static md:inset-y-auto md:top-auto md:z-auto md:h-full md:w-85 md:translate-x-0 md:shadow-none md:bg-[#F6F1E7]/80`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-lg font-semibold text-[#3F5A45] dark:text-[#B9D3BC]">
+              🌿 Plan de salle
+            </h1>
+            <p className="text-xs text-[#8A8368] dark:text-[#8FA090] mt-1">
+              Installe ta salle à ton rythme : dimensions, tables, chaises.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer les réglages"
+            className="md:hidden shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
 
       <Card title="Forme de la salle">
         {/*
@@ -272,6 +305,7 @@ export function PlannerSideBar({
           </li>
         </ul>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

@@ -14,7 +14,7 @@ import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
 import { computeScale, roomOrigin } from "@/lib/planner/scale";
-import { HEADER_HEIGHT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
+import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import type { RectArea, SceneObject } from "@/lib/planner/types";
 
 /** largeur estimée du menu contextuel d'une zone, pour éviter qu'il ne déborde du canvas */
@@ -70,6 +70,14 @@ function rectsIntersect(a: RectArea, b: RectArea): boolean {
   );
 }
 
+function computeStageSize() {
+  const sidebarDocked = window.innerWidth >= SIDEBAR_BREAKPOINT_PX;
+  return {
+    width: window.innerWidth - (sidebarDocked ? SIDEBAR_WIDTH_PX : 0),
+    height: window.innerHeight - HEADER_HEIGHT_PX,
+  };
+}
+
 export function PlannerCanvas() {
   const store = usePlannerStore();
   const {
@@ -95,17 +103,16 @@ export function PlannerCanvas() {
     selectZone,
   } = store;
 
-  const [stageSize, setStageSize] = useState(() => ({
-    width: window.innerWidth - SIDEBAR_WIDTH_PX,
-    height: window.innerHeight - HEADER_HEIGHT_PX,
-  }));
+  // en dessous de "md" la sidebar devient un tiroir superposé (voir
+  // planner-sidebar.tsx) : elle ne prend alors plus de place dans la mise en
+  // page, le canvas doit occuper toute la largeur plutôt que d'en soustraire
+  // SIDEBAR_WIDTH_PX
+  const [stageSize, setStageSize] = useState(() => computeStageSize());
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     function handleResize() {
-      setStageSize({
-        width: window.innerWidth - SIDEBAR_WIDTH_PX,
-        height: window.innerHeight - HEADER_HEIGHT_PX,
-      });
+      setStageSize(computeStageSize());
     }
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -270,8 +277,20 @@ export function PlannerCanvas() {
         hasSelectedTable={hasSelectedTable}
         onRotate={rotateSelectedTables}
         onDelete={removeSelected}
+        open={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
       <div className="relative flex-1">
+        {!isSidebarOpen && (
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Ouvrir les réglages"
+            className="md:hidden fixed bottom-4 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-[#3F5A45] text-white text-xl shadow-lg"
+          >
+            ☰
+          </button>
+        )}
         <Stage
           width={stageSize.width}
           height={stageSize.height}
