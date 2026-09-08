@@ -3,7 +3,7 @@ import type { Room } from "./types";
 import { polygonBounds } from "./geometry";
 
 /** marge autour de la salle, en pixels, pour laisser de l'air dans le canvas */
-const PADDING_PX = 48;
+export const PADDING_PX = 48;
 
 export type StageSize = { width: number; height: number };
 

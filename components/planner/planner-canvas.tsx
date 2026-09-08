@@ -1,7 +1,7 @@
 // components/planner/planner-canvas.tsx
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Stage, Layer } from "react-konva";
 import type Konva from "konva";
 import { PlannerSideBar } from "./planner-sidebar";
@@ -14,11 +14,19 @@ import { TablePanel } from "./table-panel";
 import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
-import { computeScale, roomOrigin } from "@/lib/planner/scale";
+import { PADDING_PX, cmToPx, computeScale, pxToCm, roomOrigin } from "@/lib/planner/scale";
+import { polygonBounds } from "@/lib/planner/geometry";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
 import type { RectArea, SceneObject, TableObject } from "@/lib/planner/types";
+
+/** zoom manuel (Ctrl + molette) : 1 = vue ajustée à l'écran (comportement d'origine), jamais moins */
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const ZOOM_WHEEL_SENSITIVITY = 0.0015;
+/** facteur appliqué à chaque clic sur les boutons +/- */
+const ZOOM_BUTTON_FACTOR = 1.25;
 
 /** "Rue intérieure Saint-Paul" -> "rue-interieure-saint-paul", pour les noms de fichier exportés */
 function slugify(text: string): string {
@@ -36,14 +44,14 @@ function slugify(text: string): string {
 const PANEL_WIDTH_PX = 240;
 const PANEL_MARGIN_PX = 10;
 
-/** ancre un menu contextuel à droite de l'élément visé, ou à gauche si ça déborderait du canvas */
+/** ancre un menu contextuel à droite de l'élément visé, ou à gauche si ça déborderait du contenu */
 function computePanelPosition(
   leftPx: number,
   rightPx: number,
   topPx: number,
-  stageWidthPx: number,
+  contentWidthPx: number,
 ): { x: number; y: number } {
-  const overflowsRight = rightPx + PANEL_MARGIN_PX + PANEL_WIDTH_PX > stageWidthPx;
+  const overflowsRight = rightPx + PANEL_MARGIN_PX + PANEL_WIDTH_PX > contentWidthPx;
   return {
     x: overflowsRight
       ? Math.max(leftPx - PANEL_MARGIN_PX - PANEL_WIDTH_PX, PANEL_MARGIN_PX)
@@ -155,8 +163,97 @@ export function PlannerCanvas() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const scale = computeScale(room, stageSize);
-  const origin = roomOrigin(room, stageSize, scale);
+  // -- zoom (Ctrl + molette) et défilement --
+  // stageSize reste la taille "ajustée à l'écran" (zoom 1x) ; le contenu
+  // (Stage + panneaux) grandit avec le zoom dans un conteneur `overflow:
+  // auto`, qui fournit gratuitement les barres de scroll et le défilement
+  // molette (vertical) / Maj+molette (horizontal, comportement natif du
+  // navigateur sur un conteneur scrollable).
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pendingZoomAnchorRef = useRef<{
+    clientX: number;
+    clientY: number;
+    roomCm: { x: number; y: number };
+  } | null>(null);
+
+  const fitScale = computeScale(room, stageSize);
+  const scale = fitScale * zoomLevel;
+  const roomBoundsCm = polygonBounds(room.polygon);
+  const roomWidthPx = (roomBoundsCm.maxX - roomBoundsCm.minX) * scale;
+  const roomHeightPx = (roomBoundsCm.maxY - roomBoundsCm.minY) * scale;
+  const contentWidth = Math.max(stageSize.width, roomWidthPx + PADDING_PX * 2);
+  const contentHeight = Math.max(stageSize.height, roomHeightPx + PADDING_PX * 2);
+  const origin = roomOrigin(room, { width: contentWidth, height: contentHeight }, scale);
+
+  // applique un facteur de zoom en gardant le point (clientX, clientY) fixe à
+  // l'écran — utilisé aussi bien par Ctrl+molette (point sous le curseur)
+  // que par les boutons +/- (centre du viewport visible)
+  const zoomAt = useCallback(
+    (clientX: number, clientY: number, factor: number) => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const contentX = clientX - rect.left + container.scrollLeft;
+      const contentY = clientY - rect.top + container.scrollTop;
+      const roomCm = {
+        x: pxToCm(contentX - origin.x, scale),
+        y: pxToCm(contentY - origin.y, scale),
+      };
+      setZoomLevel((z) => {
+        const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor));
+        if (next !== z) pendingZoomAnchorRef.current = { clientX, clientY, roomCm };
+        return next;
+      });
+    },
+    [origin, scale],
+  );
+
+  // boutons +/- : zoome centré sur le milieu de la partie visible du plan
+  const zoomByButton = useCallback(
+    (factor: number) => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      zoomAt(rect.left + container.clientWidth / 2, rect.top + container.clientHeight / 2, factor);
+    },
+    [zoomAt],
+  );
+  const handleZoomIn = useCallback(() => zoomByButton(ZOOM_BUTTON_FACTOR), [zoomByButton]);
+  const handleZoomOut = useCallback(() => zoomByButton(1 / ZOOM_BUTTON_FACTOR), [zoomByButton]);
+
+  // Ctrl + molette (ou pincement trackpad, reporté par le navigateur comme un
+  // wheel avec ctrlKey) zoome sur le plan, ancré sous le curseur, plutôt que
+  // de zoomer la page — écouteur natif (pas onWheel) pour garantir que
+  // preventDefault() bloque bien le zoom navigateur.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    function handleWheel(e: WheelEvent) {
+      if (!e.ctrlKey) return; // molette normale / Maj+molette : défilement natif du conteneur
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * ZOOM_WHEEL_SENSITIVITY));
+    }
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [zoomAt]);
+
+  // une fois le zoom (et donc scale/origin) recalculé, replace le point visé
+  // sous le curseur — avant peinture, pour ne pas laisser voir le saut
+  useLayoutEffect(() => {
+    const anchor = pendingZoomAnchorRef.current;
+    const container = scrollContainerRef.current;
+    if (!anchor || !container) return;
+    pendingZoomAnchorRef.current = null;
+
+    const rect = container.getBoundingClientRect();
+    const newContentX = origin.x + cmToPx(anchor.roomCm.x, scale);
+    const newContentY = origin.y + cmToPx(anchor.roomCm.y, scale);
+    container.scrollLeft = newContentX - (anchor.clientX - rect.left);
+    container.scrollTop = newContentY - (anchor.clientY - rect.top);
+  }, [scale, origin]);
 
   // -- sélection par zone (rubber-band) --
   const dragSelectRef = useRef<{ start: { x: number; y: number }; additive: boolean } | null>(
@@ -309,7 +406,7 @@ export function PlannerCanvas() {
     const zoneRightPx = origin.x + (selectedZone.x + selectedZone.widthCm) * scale;
     const zoneLeftPx = origin.x + selectedZone.x * scale;
     const zoneTopPx = origin.y + selectedZone.y * scale;
-    zonePanelPos = computePanelPosition(zoneLeftPx, zoneRightPx, zoneTopPx, stageSize.width);
+    zonePanelPos = computePanelPosition(zoneLeftPx, zoneRightPx, zoneTopPx, contentWidth);
   }
 
   // menu contextuel d'une table seule sélectionnée (jamais pour un
@@ -323,7 +420,7 @@ export function PlannerCanvas() {
   let tablePanelPos: { x: number; y: number } | null = null;
   if (singleSelectedTable) {
     const box = getObjectBoundsPx(singleSelectedTable, scale, origin);
-    tablePanelPos = computePanelPosition(box.x, box.x + box.width, box.y, stageSize.width);
+    tablePanelPos = computePanelPosition(box.x, box.x + box.width, box.y, contentWidth);
   }
 
   const roomLabel = room.kind === "passerelle" ? PASSERELLE_DISPLAY_NAME : "Plan de salle";
@@ -373,92 +470,119 @@ export function PlannerCanvas() {
             ☰
           </button>
         )}
-        <Stage
-          ref={stageRef}
-          width={stageSize.width}
-          height={stageSize.height}
-          onMouseDown={handleStageMouseDown}
-          onMouseMove={handleStageMouseMove}
-          onMouseUp={handleStageMouseUp}
-        >
-          <Layer>
-            <Room room={room} scale={scale} origin={origin} />
-            {zones.map((zone) => (
-              <Zone
-                key={zone.id}
-                zone={zone}
-                scale={scale}
-                origin={origin}
-                selected={zone.id === selectedZoneId}
-                onSelect={selectZone}
-                onChange={updateZone}
-                onBeginChange={pushHistory}
-              />
-            ))}
-            {objects.map((obj) =>
-              obj.kind === "table" ? (
-                <Table
-                  key={obj.id}
-                  table={obj}
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-1 rounded-full border border-black/10 bg-white/90 dark:bg-[#232823]/90 dark:border-white/10 p-1 shadow-lg backdrop-blur">
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            disabled={zoomLevel <= ZOOM_MIN}
+            aria-label="Dézoomer"
+            title="Dézoomer"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-medium text-[#3F5A45] dark:text-[#B9D3BC] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            −
+          </button>
+          <span className="w-10 text-center text-xs font-medium text-[#4A4636] dark:text-[#D8D2BE] tabular-nums">
+            {Math.round(zoomLevel * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            disabled={zoomLevel >= ZOOM_MAX}
+            aria-label="Zoomer"
+            title="Zoomer"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-medium text-[#3F5A45] dark:text-[#B9D3BC] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            +
+          </button>
+        </div>
+        <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto">
+          <Stage
+            ref={stageRef}
+            width={contentWidth}
+            height={contentHeight}
+            onMouseDown={handleStageMouseDown}
+            onMouseMove={handleStageMouseMove}
+            onMouseUp={handleStageMouseUp}
+          >
+            <Layer>
+              <Room room={room} scale={scale} origin={origin} />
+              {zones.map((zone) => (
+                <Zone
+                  key={zone.id}
+                  zone={zone}
                   scale={scale}
                   origin={origin}
-                  roomPolygon={room.polygon}
-                  selected={selectedIds.includes(obj.id)}
-                  getDragGroup={getDragGroup}
-                  onPointerDown={handleObjectPointerDown}
-                  onDragDelta={handleDragDelta}
-                  onDragBegin={pushHistory}
+                  selected={zone.id === selectedZoneId}
+                  onSelect={selectZone}
+                  onChange={updateZone}
+                  onBeginChange={pushHistory}
                 />
-              ) : (
-                <Chair
-                  key={obj.id}
-                  chair={obj}
-                  scale={scale}
-                  origin={origin}
-                  roomPolygon={room.polygon}
-                  selected={selectedIds.includes(obj.id)}
-                  getDragGroup={getDragGroup}
-                  onPointerDown={handleObjectPointerDown}
-                  onDragDelta={handleDragDelta}
-                  onDragBegin={pushHistory}
-                />
-              ),
-            )}
-            {selectionArea && <SelectionRect area={selectionArea} />}
-          </Layer>
-        </Stage>
+              ))}
+              {objects.map((obj) =>
+                obj.kind === "table" ? (
+                  <Table
+                    key={obj.id}
+                    table={obj}
+                    scale={scale}
+                    origin={origin}
+                    roomPolygon={room.polygon}
+                    selected={selectedIds.includes(obj.id)}
+                    getDragGroup={getDragGroup}
+                    onPointerDown={handleObjectPointerDown}
+                    onDragDelta={handleDragDelta}
+                    onDragBegin={pushHistory}
+                  />
+                ) : (
+                  <Chair
+                    key={obj.id}
+                    chair={obj}
+                    scale={scale}
+                    origin={origin}
+                    roomPolygon={room.polygon}
+                    selected={selectedIds.includes(obj.id)}
+                    getDragGroup={getDragGroup}
+                    onPointerDown={handleObjectPointerDown}
+                    onDragDelta={handleDragDelta}
+                    onDragBegin={pushHistory}
+                  />
+                ),
+              )}
+              {selectionArea && <SelectionRect area={selectionArea} />}
+            </Layer>
+          </Stage>
+
+          {selectedZone && zonePanelPos && (
+            <ZonePanel
+              key={selectedZone.id}
+              zone={selectedZone}
+              x={zonePanelPos.x}
+              y={zonePanelPos.y}
+              onRename={(name) => updateZone(selectedZone.id, { name })}
+              onResize={(widthCm, heightCm) => updateZone(selectedZone.id, { widthCm, heightCm })}
+              onRecolor={(color) => updateZone(selectedZone.id, { color })}
+              onDelete={() => removeZone(selectedZone.id)}
+              onClose={() => selectZone(null)}
+              onBeginChange={pushHistory}
+            />
+          )}
+
+          {singleSelectedTable && tablePanelPos && (
+            <TablePanel
+              key={singleSelectedTable.id}
+              table={singleSelectedTable}
+              x={tablePanelPos.x}
+              y={tablePanelPos.y}
+              onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
+              onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
+              onRotate={rotateSelectedTables}
+              onDelete={removeSelected}
+              onClose={clearSelection}
+              onBeginChange={pushHistory}
+            />
+          )}
+        </div>
 
         <ZoneLegend zones={zones} />
-
-        {selectedZone && zonePanelPos && (
-          <ZonePanel
-            key={selectedZone.id}
-            zone={selectedZone}
-            x={zonePanelPos.x}
-            y={zonePanelPos.y}
-            onRename={(name) => updateZone(selectedZone.id, { name })}
-            onResize={(widthCm, heightCm) => updateZone(selectedZone.id, { widthCm, heightCm })}
-            onRecolor={(color) => updateZone(selectedZone.id, { color })}
-            onDelete={() => removeZone(selectedZone.id)}
-            onClose={() => selectZone(null)}
-            onBeginChange={pushHistory}
-          />
-        )}
-
-        {singleSelectedTable && tablePanelPos && (
-          <TablePanel
-            key={singleSelectedTable.id}
-            table={singleSelectedTable}
-            x={tablePanelPos.x}
-            y={tablePanelPos.y}
-            onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
-            onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
-            onRotate={rotateSelectedTables}
-            onDelete={removeSelected}
-            onClose={clearSelection}
-            onBeginChange={pushHistory}
-          />
-        )}
 
         {selectedCount > 0 && !singleSelectedTable && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-black/10 bg-white/90 dark:bg-[#232823]/90 dark:border-white/10 px-3 py-2 shadow-lg backdrop-blur">
