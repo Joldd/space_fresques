@@ -1,11 +1,11 @@
 // components/planner/room.tsx
 "use client";
 
-import { Group, Line, Text } from "react-konva";
+import { Group, Line, Shape, Text } from "react-konva";
 import type Konva from "konva";
 import type { Room } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
-import { polygonBounds } from "@/lib/planner/geometry";
+import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
 
 type RoomProps = {
   room: Room;
@@ -17,20 +17,19 @@ const GRID_STEP_CM = 100; // une ligne de repère par mètre
 
 export function Room({ room, scale, origin }: RoomProps) {
   const bounds = polygonBounds(room.polygon);
-  const points = room.polygon.flatMap((p) => [cmToPx(p.x, scale), cmToPx(p.y, scale)]);
   const widthPx = cmToPx(bounds.maxX - bounds.minX, scale);
   const heightPx = cmToPx(bounds.maxY - bounds.minY, scale);
+  const pointsPx = room.polygon.map((p) => ({ x: cmToPx(p.x, scale), y: cmToPx(p.y, scale) }));
+  const flatPointsPx = pointsPx.flatMap((p) => [p.x, p.y]);
 
-  // découpe la grille à la forme exacte du contour de la salle
+  // découpe la grille à la forme exacte du contour de la salle (arrondis compris)
   function clipToRoom(ctx: Konva.Context) {
-    ctx.beginPath();
-    room.polygon.forEach((p, i) => {
-      const x = cmToPx(p.x, scale);
-      const y = cmToPx(p.y, scale);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
+    tracePolygonPath(ctx, pointsPx, room.curvedVertices);
+  }
+
+  function drawRoomOutline(ctx: Konva.Context, shape: Konva.Shape) {
+    tracePolygonPath(ctx, pointsPx, room.curvedVertices);
+    ctx.fillStrokeShape(shape);
   }
 
   const verticalLines = [];
@@ -51,15 +50,31 @@ export function Room({ room, scale, origin }: RoomProps) {
 
   return (
     <Group x={origin.x} y={origin.y}>
+      {/*
+        L'ombre portée est déposée par une forme Konva "native" (Line) séparée,
+        posée sous le tracé visible, plutôt que par le Shape lui-même : un
+        Shape à sceneFunc custom combiné à shadowBlur déclenche un bug de
+        recomposition dans Chromium — après un resize du Stage ou la
+        suppression d'un objet ailleurs sur le canvas, d'anciens pixels
+        restent visibles jusqu'au prochain repaint sans rapport (survolé,
+        redimensionné...), alors que le contenu réel du canvas est correct.
+        Une Line native porte l'ombre sans ce problème ; le Shape au-dessus
+        ne fait plus que dessiner le contour (arrondi compris), sans ombre.
+      */}
       <Line
-        name="room-background"
-        points={points}
+        points={flatPointsPx}
         closed
+        fill="#F6F1E7"
+        shadowColor="rgba(0,0,0,0.12)"
+        shadowBlur={16}
+        listening={false}
+      />
+      <Shape
+        name="room-background"
+        sceneFunc={drawRoomOutline}
         fill="#F6F1E7"
         stroke="#C9B99A"
         strokeWidth={2}
-        shadowColor="rgba(0,0,0,0.12)"
-        shadowBlur={16}
       />
       <Group clipFunc={clipToRoom}>
         {verticalLines}

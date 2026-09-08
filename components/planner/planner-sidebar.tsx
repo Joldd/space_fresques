@@ -3,10 +3,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { Room } from "@/lib/planner/types";
-import {
-  DEFAULT_CHAIR,
-  DEFAULT_TABLE,
-} from "@/lib/planner/use-planner-store";
+import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
 
 type PlannerSideBarProps = {
   room: Room;
@@ -20,7 +17,13 @@ type PlannerSideBarProps = {
   onDelete: () => void;
 };
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="rounded-2xl bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10 p-4 shadow-sm">
       <h2 className="text-sm font-semibold text-[#3F5A45] dark:text-[#B9D3BC] mb-3 tracking-wide uppercase">
@@ -58,7 +61,9 @@ function NumberField({
           onChange={(e) => onChange(Number(e.target.value))}
           className="w-full bg-transparent outline-none"
         />
-        <span className="text-xs text-[#8A8368] dark:text-[#8FA090]">{suffix}</span>
+        <span className="text-xs text-[#8A8368] dark:text-[#8FA090]">
+          {suffix}
+        </span>
       </div>
     </label>
   );
@@ -129,7 +134,9 @@ export function PlannerSideBar({
           </button>
           <button
             type="button"
-            onClick={() => onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1))}
+            onClick={() =>
+              onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1))
+            }
             className={`rounded-xl text-sm font-medium py-2 transition-colors ${
               room.kind === "rectangle"
                 ? "bg-[#3F5A45] text-white"
@@ -142,13 +149,28 @@ export function PlannerSideBar({
 
         {room.kind === "passerelle" ? (
           <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
-            Le plan réel de la salle Passerelle : {room.widthM} m × {room.heightM} m.
+            Le plan réel de la salle Passerelle : {room.widthM} m ×{" "}
+            {room.heightM} m.
           </p>
         ) : (
           <form onSubmit={applyRoom} className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="Largeur" value={widthM} onChange={setWidthM} min={1} step={0.5} suffix="m" />
-              <NumberField label="Profondeur" value={heightM} onChange={setHeightM} min={1} step={0.5} suffix="m" />
+              <NumberField
+                label="Largeur"
+                value={widthM}
+                onChange={setWidthM}
+                min={1}
+                step={0.5}
+                suffix="m"
+              />
+              <NumberField
+                label="Profondeur"
+                value={heightM}
+                onChange={setHeightM}
+                min={1}
+                step={0.5}
+                suffix="m"
+              />
             </div>
             <button
               type="submit"
@@ -163,8 +185,20 @@ export function PlannerSideBar({
       <Card title="Ajouter une table">
         <form onSubmit={submitTable} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
-            <NumberField label="Largeur" value={tableWidth} onChange={setTableWidth} min={10} suffix="cm" />
-            <NumberField label="Profondeur" value={tableDepth} onChange={setTableDepth} min={10} suffix="cm" />
+            <NumberField
+              label="Largeur"
+              value={tableWidth}
+              onChange={setTableWidth}
+              min={10}
+              suffix="cm"
+            />
+            <NumberField
+              label="Profondeur"
+              value={tableDepth}
+              onChange={setTableDepth}
+              min={10}
+              suffix="cm"
+            />
           </div>
           <button
             type="submit"
@@ -175,7 +209,8 @@ export function PlannerSideBar({
         </form>
       </Card>
 
-      <Card title="Ajouter une chaise">
+      {/* Pas besoin de chaises pour l'instant */}
+      {/* <Card title="Ajouter une chaise">
         <form onSubmit={submitChair} className="flex flex-col gap-3">
           <NumberField label="Diamètre" value={chairDiameter} onChange={setChairDiameter} min={10} suffix="cm" />
           <button
@@ -185,7 +220,7 @@ export function PlannerSideBar({
             + Ajouter une chaise
           </button>
         </form>
-      </Card>
+      </Card> */}
 
       {selectedCount > 0 && (
         <Card title="Sélection">
@@ -215,7 +250,10 @@ export function PlannerSideBar({
       <div className="mt-auto text-xs text-[#8A8368] dark:text-[#8FA090] leading-relaxed">
         <p className="font-medium mb-1">Astuces</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>Clic + glisser sur une zone vide pour sélectionner plusieurs éléments</li>
+          <li>
+            Clic + glisser sur une zone vide pour sélectionner plusieurs
+            éléments
+          </li>
           <li>Ctrl/Cmd + clic pour ajouter à la sélection</li>
           <li>Touche R pour pivoter, Suppr pour supprimer</li>
           <li>Impossible de sortir une table ou une chaise de la salle</li>

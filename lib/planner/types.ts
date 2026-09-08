@@ -10,6 +10,14 @@ export type Room = {
   widthM: number;
   /** hauteur de la boîte englobante, en mètres (affichage) */
   heightM: number;
+  /**
+   * Indices (dans `polygon`) des sommets à dessiner comme un arrondi plutôt
+   * qu'un angle vif : le sommet sert de point de contrôle d'une courbe
+   * quadratique entre son voisin précédent et son voisin suivant. Le
+   * polygone (collisions, contention des meubles) reste inchangé — seul le
+   * tracé visuel est arrondi.
+   */
+  curvedVertices?: number[];
 };
 
 export type Rotation = 0 | 90 | 180 | 270;

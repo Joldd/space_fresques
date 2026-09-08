@@ -45,7 +45,7 @@ export default function Home() {
           </h1>
           <p className="max-w-xl text-base sm:text-lg text-foreground/70">
             Un outil tout simple pour imaginer la disposition de tes tables et
-            chaises avant le jour J. Glisse, dépose, ajuste — à ton rythme,
+            chaises avant le jour J. Glisse, dépose, ajuste à ton rythme,
             en toute décontraction.
           </p>
           <Link

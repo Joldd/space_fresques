@@ -57,6 +57,44 @@ export function polygonCentroid(poly: Polygon): Point {
   return { x: cx / (6 * area), y: cy / (6 * area) };
 }
 
+/** contexte de dessin minimal requis par tracePolygonPath (compatible Canvas2D / Konva.Context) */
+export type PathDrawingContext = {
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void;
+  closePath(): void;
+};
+
+/**
+ * Trace le contour d'un polygone sur un contexte de dessin, en remplaçant
+ * les sommets listés dans `curvedIndices` par un arrondi : le sommet sert de
+ * point de contrôle d'une courbe quadratique entre son voisin précédent et
+ * son voisin suivant, au lieu de former un angle vif.
+ */
+export function tracePolygonPath(
+  ctx: PathDrawingContext,
+  points: Point[],
+  curvedIndices?: Iterable<number>,
+) {
+  const n = points.length;
+  if (n === 0) return;
+  const curved = new Set(curvedIndices);
+  ctx.moveTo(points[0].x, points[0].y);
+  let i = 1;
+  while (i <= n) {
+    const idx = i % n;
+    if (curved.has(idx)) {
+      const end = points[(idx + 1) % n];
+      ctx.quadraticCurveTo(points[idx].x, points[idx].y, end.x, end.y);
+      i += 2;
+    } else {
+      ctx.lineTo(points[idx].x, points[idx].y);
+      i += 1;
+    }
+  }
+  ctx.closePath();
+}
+
 export function rectanglePolygon(widthCm: number, heightCm: number): Polygon {
   return [
     { x: 0, y: 0 },

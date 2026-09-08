@@ -4,23 +4,32 @@ import { polygonBounds, rectanglePolygon } from "./geometry";
 
 /**
  * Contour approximatif de la salle "Passerelle" (plan fourni par le client),
- * L: 65,5 m × l: 14 m. Les deux dimensions principales sont fidèles au plan ;
- * la bosse et le rétrécissement en pied sont estimés à partir des
- * proportions du croquis (seules L et l y sont chiffrées). La petite
- * niche d'escalier signalée en pointillés (passerelle en hauteur) n'est
- * pas modélisée : elle n'affecte pas le sol utilisable.
+ * L: 65,5 m × l: 14 m. Les deux dimensions principales sont fidèles au plan,
+ * ainsi que la largeur au point le plus large de la bosse (21 m, mesurée sur
+ * le croquis). Le reste de la bosse et le rétrécissement en pied sont
+ * estimés à partir des proportions du croquis. La petite niche d'escalier
+ * signalée en pointillés (passerelle en hauteur) n'est pas modélisée : elle
+ * n'affecte pas le sol utilisable.
+ *
+ * Le mur de la bosse (haut-droit) est en réalité arrondi : le sommet à
+ * 21 m sert de point de contrôle d'une courbe entre ses deux voisins plutôt
+ * que de former un angle vif — voir `curvedVertices` sur PASSERELLE_ROOM.
  */
 const PASSERELLE_POINTS_M: [number, number][] = [
   [0, 0],
-  [14, 0],
-  [18, 13],
-  [19, 20],
-  [18, 27],
-  [14, 40],
-  [9, 52],
-  [9, 65.5],
+  [12, 0],
+  [17, 10.48],
+  [21.5, 17.685],
+  [19, 25.545],
+  [21.5, 32.75],
+  [17, 39.3],
+  [8.5, 56.33],
+  [8.5, 65.5],
   [0, 65.5],
 ];
+
+/** index (dans PASSERELLE_POINTS_M) du sommet le plus large de la bosse, arrondi à l'affichage */
+const PASSERELLE_CURVED_VERTICES = [4];
 
 function metersPolygonToCm(points: [number, number][]) {
   return points.map(([x, y]) => ({ x: x * 100, y: y * 100 }));
@@ -29,6 +38,7 @@ function metersPolygonToCm(points: [number, number][]) {
 function roomFromPolygonM(
   kind: Room["kind"],
   points: [number, number][],
+  curvedVertices?: number[],
 ): Room {
   const polygon = metersPolygonToCm(points);
   const bounds = polygonBounds(polygon);
@@ -37,10 +47,15 @@ function roomFromPolygonM(
     polygon,
     widthM: (bounds.maxX - bounds.minX) / 100,
     heightM: (bounds.maxY - bounds.minY) / 100,
+    curvedVertices,
   };
 }
 
-export const PASSERELLE_ROOM: Room = roomFromPolygonM("passerelle", PASSERELLE_POINTS_M);
+export const PASSERELLE_ROOM: Room = roomFromPolygonM(
+  "passerelle",
+  PASSERELLE_POINTS_M,
+  PASSERELLE_CURVED_VERTICES,
+);
 
 export function makeRectangleRoom(widthM: number, heightM: number): Room {
   return {

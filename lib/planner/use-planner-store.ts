@@ -9,8 +9,8 @@ import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry"
 const STORAGE_KEY = "space-fresques:planner";
 
 export const DEFAULT_ROOM: Room = PASSERELLE_ROOM;
-export const DEFAULT_TABLE = { widthCm: 140, depthCm: 70 };
-export const DEFAULT_CHAIR = { diameterCm: 45 };
+export const DEFAULT_TABLE = { widthCm: 200, depthCm: 300 };
+export const DEFAULT_CHAIR = { diameterCm: 80 };
 
 type State = {
   room: Room;
