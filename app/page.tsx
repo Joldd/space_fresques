@@ -37,16 +37,23 @@ export default function Home() {
 
       <main className="relative mx-auto flex max-w-5xl flex-col items-center gap-24 px-6 py-20 sm:py-28">
         <section className="flex flex-col items-center gap-6 text-center">
-          <span className="rounded-full bg-white/70 dark:bg-white/10 px-4 py-1.5 text-sm text-sage-dark border border-sand-dark">
-            Pensé pour les assos qui organisent des events 🎉
+          <img
+            src="/enjeux69.png"
+            alt="En'jeux communs 69"
+            className="h-14 sm:h-16 w-auto"
+          />
+          <span className="flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/10 px-4 py-1.5 text-sm text-sage-dark border border-sand-dark">
+            <img src="/favicon.ico" alt="" className="h-4 w-4" />
+            Dédié au festival En&apos;jeux communs 69 🎉
           </span>
           <h1 className="font-heading text-4xl sm:text-6xl leading-tight text-sage-dark max-w-3xl">
             Organise ta salle, sans prise de tête
           </h1>
           <p className="max-w-xl text-base sm:text-lg text-foreground/70">
-            Un outil tout simple pour imaginer la disposition de tes tables et
-            chaises avant le jour J. Glisse, dépose, ajuste à ton rythme,
-            en toute décontraction.
+            Cet outil est fait pour préparer la disposition des tables et
+            chaises du festival <strong>En&apos;jeux communs 69</strong> avant le
+            jour J. Glisse, dépose, ajuste à ton rythme, en toute
+            décontraction.
           </p>
           <Link
             href="/planner"

@@ -2,6 +2,9 @@
 import type { Room } from "./types";
 import { polygonBounds, rectanglePolygon } from "./geometry";
 
+/** nom affiché à l'utilisateur pour la salle "passerelle" (nom de code interne inchangé) */
+export const PASSERELLE_DISPLAY_NAME = "Rue intérieure Saint-Paul";
+
 /**
  * Contour approximatif de la salle "Passerelle" (plan fourni par le client),
  * L: 65,5 m × l: 14 m. Les deux dimensions principales sont fidèles au plan,

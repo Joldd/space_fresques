@@ -4,6 +4,7 @@
 import { useState, type FormEvent } from "react";
 import type { Room } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
+import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
 
 type PlannerSideBarProps = {
   room: Room;
@@ -122,38 +123,22 @@ export function PlannerSideBar({
       </div>
 
       <Card title="Forme de la salle">
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <button
-            type="button"
-            onClick={onSetPasserelleRoom}
-            className={`rounded-xl text-sm font-medium py-2 transition-colors ${
-              room.kind === "passerelle"
-                ? "bg-[#3F5A45] text-white"
-                : "bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/10 dark:hover:bg-white/15"
-            }`}
-          >
-            🌉 Passerelle
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1))
-            }
-            className={`rounded-xl text-sm font-medium py-2 transition-colors ${
-              room.kind === "rectangle"
-                ? "bg-[#3F5A45] text-white"
-                : "bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/10 dark:hover:bg-white/15"
-            }`}
-          >
-            ▭ Rectangle
-          </button>
-        </div>
-
+        {/*
+          Le mode "Rectangle" existe toujours côté code (onSetRectangleRoom,
+          formulaire ci-dessous) mais reste caché pour l'instant : seule la
+          salle Rue intérieure Saint-Paul est utilisée. À réactiver le jour
+          où un autre lieu sera géré par l'outil.
+        */}
         {room.kind === "passerelle" ? (
-          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
-            Le plan réel de la salle Passerelle : {room.widthM} m ×{" "}
-            {room.heightM} m.
-          </p>
+          <>
+            <p className="mb-3 rounded-xl bg-[#3F5A45] px-3 py-2 text-sm font-medium text-white">
+              🌉 {PASSERELLE_DISPLAY_NAME}
+            </p>
+            <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
+              Le plan réel de la salle {PASSERELLE_DISPLAY_NAME} : {room.widthM} m ×{" "}
+              {room.heightM} m.
+            </p>
+          </>
         ) : (
           <form onSubmit={applyRoom} className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
@@ -179,6 +164,13 @@ export function PlannerSideBar({
               className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
             >
               Mettre à jour la salle
+            </button>
+            <button
+              type="button"
+              onClick={onSetPasserelleRoom}
+              className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+            >
+              🌉 Revenir à {PASSERELLE_DISPLAY_NAME}
             </button>
           </form>
         )}

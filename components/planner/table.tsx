@@ -5,6 +5,7 @@ import { Group, Rect } from "react-konva";
 import type { Point, SceneObject, TableObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
+import { setCanvasCursor } from "@/lib/planner/cursor";
 
 type TableProps = {
   table: TableObject;
@@ -51,6 +52,8 @@ export function Table({
       onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
+      onMouseEnter={(e) => setCanvasCursor(e, "pointer")}
+      onMouseLeave={(e) => setCanvasCursor(e, "default")}
     >
       <Rect
         x={-widthPx / 2}

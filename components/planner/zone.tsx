@@ -7,6 +7,7 @@ import type Konva from "konva";
 import type { ZoneObject } from "@/lib/planner/types";
 import { cmToPx, pxToCm } from "@/lib/planner/scale";
 import { MIN_ZONE_SIZE_CM } from "@/lib/planner/zones";
+import { setCanvasCursor } from "@/lib/planner/cursor";
 
 type ZonePatch = Partial<Pick<ZoneObject, "x" | "y" | "widthCm" | "heightCm">>;
 
@@ -67,6 +68,8 @@ export function Zone({ zone, scale, origin, selected, onSelect, onChange }: Zone
         dash={[7, 5]}
         draggable
         onMouseDown={() => onSelect(zone.id)}
+        onMouseEnter={(e) => setCanvasCursor(e, "pointer")}
+        onMouseLeave={(e) => setCanvasCursor(e, "default")}
         onDragEnd={(e) => {
           onChange(zone.id, {
             x: pxToCm(e.target.x() - origin.x, scale),

@@ -41,3 +41,17 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* curseur "main" sur tout élément cliquable/interactif de l'UI (hors canvas
+   du planner, géré séparément côté Konva — cursor CSS n'a pas de prise sur
+   un <canvas>) */
+button:not(:disabled),
+a,
+select,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+input[type="color"] {
+  cursor: pointer;
+}

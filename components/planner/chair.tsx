@@ -5,6 +5,7 @@ import { Circle } from "react-konva";
 import type { ChairObject, Point, SceneObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
+import { setCanvasCursor } from "@/lib/planner/cursor";
 
 type ChairProps = {
   chair: ChairObject;
@@ -56,6 +57,8 @@ export function Chair({
       onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
+      onMouseEnter={(e) => setCanvasCursor(e, "pointer")}
+      onMouseLeave={(e) => setCanvasCursor(e, "default")}
     />
   );
 }
