@@ -145,6 +145,7 @@ export function PlannerCanvas() {
     undo,
     copySelection,
     paste,
+    resetPlan,
   } = store;
 
   // en dessous de "md" la sidebar devient un tiroir superposé (voir
@@ -440,6 +441,13 @@ export function PlannerCanvas() {
     downloadCanvasAsPdf(canvas, `${exportFilenameBase}.pdf`);
   }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
 
+  const handleReset = useCallback(() => {
+    const confirmed = window.confirm(
+      `Réinitialiser le plan ?\n\nLa salle repasse à ${PASSERELLE_DISPLAY_NAME}, et toutes les tables, chaises et zones actuelles sont supprimées. Ctrl+Z permet de revenir en arrière juste après.`,
+    );
+    if (confirmed) resetPlan();
+  }, [resetPlan]);
+
   return (
     <div className="flex h-[calc(100vh-56px)] bg-[#EFE7D6] dark:bg-[#1B1F1A]">
       <PlannerSideBar
@@ -495,6 +503,15 @@ export function PlannerCanvas() {
             +
           </button>
         </div>
+        <button
+          type="button"
+          onClick={handleReset}
+          aria-label="Réinitialiser le plan"
+          title="Réinitialiser le plan (vide la sauvegarde locale)"
+          className="absolute top-4 right-4 z-20 flex h-9 items-center gap-1.5 rounded-full border border-black/10 bg-white/90 dark:bg-[#232823]/90 dark:border-white/10 px-3 text-sm font-medium text-[#D9765F] shadow-lg backdrop-blur hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+        >
+          🗑 Réinitialiser
+        </button>
         <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto">
           <Stage
             ref={stageRef}

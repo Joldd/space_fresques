@@ -66,7 +66,8 @@ type Action =
   | { type: "PUSH_HISTORY" }
   | { type: "UNDO" }
   | { type: "COPY_SELECTION" }
-  | { type: "PASTE" };
+  | { type: "PASTE" }
+  | { type: "RESET" };
 
 function nextRotation(rotation: Rotation): Rotation {
   return ((rotation + 90) % 360) as Rotation;
@@ -409,6 +410,16 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "RESET":
+      // repart de la salle et du plan par défaut ; l'effet de sauvegarde
+      // écrase alors la sauvegarde locale avec cet état vierge. On garde un
+      // filet de rattrapage : un Ctrl+Z juste après restaure tout le plan.
+      return {
+        ...initialState(),
+        hydrated: true,
+        past: withHistory(state),
+      };
+
     default:
       return state;
   }
@@ -541,6 +552,7 @@ export function usePlannerStore() {
   const undo = useCallback(() => dispatch({ type: "UNDO" }), []);
   const copySelection = useCallback(() => dispatch({ type: "COPY_SELECTION" }), []);
   const paste = useCallback(() => dispatch({ type: "PASTE" }), []);
+  const resetPlan = useCallback(() => dispatch({ type: "RESET" }), []);
 
   return {
     room: state.room,
@@ -571,6 +583,7 @@ export function usePlannerStore() {
     undo,
     copySelection,
     paste,
+    resetPlan,
   };
 }
 
