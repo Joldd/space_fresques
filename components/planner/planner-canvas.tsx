@@ -15,7 +15,21 @@ import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
 import { computeScale, roomOrigin } from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
+import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
+import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
 import type { RectArea, SceneObject } from "@/lib/planner/types";
+
+/** "Rue intérieure Saint-Paul" -> "rue-interieure-saint-paul", pour les noms de fichier exportés */
+function slugify(text: string): string {
+  return (
+    text
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "plan"
+  );
+}
 
 /** largeur estimée du menu contextuel d'une zone, pour éviter qu'il ne déborde du canvas */
 const ZONE_PANEL_WIDTH_PX = 240;
@@ -109,6 +123,7 @@ export function PlannerCanvas() {
   // SIDEBAR_WIDTH_PX
   const [stageSize, setStageSize] = useState(() => computeStageSize());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const stageRef = useRef<Konva.Stage>(null);
 
   useEffect(() => {
     function handleResize() {
@@ -264,6 +279,23 @@ export function PlannerCanvas() {
     };
   }
 
+  const roomLabel = room.kind === "passerelle" ? PASSERELLE_DISPLAY_NAME : "Plan de salle";
+  const exportFilenameBase = `plan-${slugify(roomLabel)}`;
+
+  const handleExportJpeg = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const canvas = buildExportCanvas(stage, room, zones, scale, origin, roomLabel);
+    downloadCanvasAsJpeg(canvas, `${exportFilenameBase}.jpg`);
+  }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
+
+  const handleExportPdf = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const canvas = buildExportCanvas(stage, room, zones, scale, origin, roomLabel);
+    downloadCanvasAsPdf(canvas, `${exportFilenameBase}.pdf`);
+  }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
+
   return (
     <div className="flex h-[calc(100vh-56px)] bg-[#EFE7D6] dark:bg-[#1B1F1A]">
       <PlannerSideBar
@@ -277,6 +309,8 @@ export function PlannerCanvas() {
         hasSelectedTable={hasSelectedTable}
         onRotate={rotateSelectedTables}
         onDelete={removeSelected}
+        onExportJpeg={handleExportJpeg}
+        onExportPdf={handleExportPdf}
         open={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
@@ -292,6 +326,7 @@ export function PlannerCanvas() {
           </button>
         )}
         <Stage
+          ref={stageRef}
           width={stageSize.width}
           height={stageSize.height}
           onMouseDown={handleStageMouseDown}

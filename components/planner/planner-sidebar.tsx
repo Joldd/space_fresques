@@ -17,6 +17,8 @@ type PlannerSideBarProps = {
   hasSelectedTable: boolean;
   onRotate: () => void;
   onDelete: () => void;
+  onExportJpeg: () => void;
+  onExportPdf: () => void;
   /**
    * En dessous du breakpoint "md", la sidebar devient un tiroir superposé
    * (voir SIDEBAR_BREAKPOINT_PX) : `open` contrôle sa visibilité et `onClose`
@@ -93,6 +95,8 @@ export function PlannerSideBar({
   hasSelectedTable,
   onRotate,
   onDelete,
+  onExportJpeg,
+  onExportPdf,
   open,
   onClose,
 }: PlannerSideBarProps) {
@@ -249,6 +253,28 @@ export function PlannerSideBar({
         >
           + Ajouter une zone
         </button>
+      </Card>
+
+      <Card title="Exporter le plan">
+        <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+          La salle, les tables et les zones, avec leur légende.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onExportJpeg}
+            className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+          >
+            🖼 JPEG
+          </button>
+          <button
+            type="button"
+            onClick={onExportPdf}
+            className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+          >
+            📄 PDF
+          </button>
+        </div>
       </Card>
 
       {/* Pas besoin de chaises pour l'instant */}
