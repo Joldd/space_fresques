@@ -6,6 +6,7 @@ import type { Point, SceneObject, TableObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
 import { setCanvasCursor } from "@/lib/planner/cursor";
+import { DEFAULT_TABLE_COLOR, darken } from "@/lib/planner/color";
 
 type TableProps = {
   table: TableObject;
@@ -32,6 +33,7 @@ export function Table({
   const depthPx = cmToPx(table.depthCm, scale);
   const x = origin.x + cmToPx(table.x, scale);
   const y = origin.y + cmToPx(table.y, scale);
+  const color = table.color ?? DEFAULT_TABLE_COLOR;
 
   const { handleMouseDown, handleDragStart, handleDragMove, dragBoundFunc } = useConstrainedDrag({
     id: table.id,
@@ -60,8 +62,8 @@ export function Table({
         y={-depthPx / 2}
         width={widthPx}
         height={depthPx}
-        fill="#D98E73"
-        stroke={selected ? "#3F5A45" : "#B5714F"}
+        fill={color}
+        stroke={selected ? "#3F5A45" : darken(color)}
         strokeWidth={selected ? 3 : 1.5}
         cornerRadius={6}
         shadowColor="rgba(0,0,0,0.25)"

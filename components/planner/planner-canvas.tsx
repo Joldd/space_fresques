@@ -10,6 +10,7 @@ import { Chair } from "./chair";
 import { Room } from "./room";
 import { Zone } from "./zone";
 import { ZonePanel } from "./zone-panel";
+import { TablePanel } from "./table-panel";
 import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
@@ -17,7 +18,7 @@ import { computeScale, roomOrigin } from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
-import type { RectArea, SceneObject } from "@/lib/planner/types";
+import type { RectArea, SceneObject, TableObject } from "@/lib/planner/types";
 
 /** "Rue intérieure Saint-Paul" -> "rue-interieure-saint-paul", pour les noms de fichier exportés */
 function slugify(text: string): string {
@@ -31,9 +32,25 @@ function slugify(text: string): string {
   );
 }
 
-/** largeur estimée du menu contextuel d'une zone, pour éviter qu'il ne déborde du canvas */
-const ZONE_PANEL_WIDTH_PX = 240;
-const ZONE_PANEL_MARGIN_PX = 10;
+/** largeur estimée d'un menu contextuel (zone ou table), pour éviter qu'il ne déborde du canvas */
+const PANEL_WIDTH_PX = 240;
+const PANEL_MARGIN_PX = 10;
+
+/** ancre un menu contextuel à droite de l'élément visé, ou à gauche si ça déborderait du canvas */
+function computePanelPosition(
+  leftPx: number,
+  rightPx: number,
+  topPx: number,
+  stageWidthPx: number,
+): { x: number; y: number } {
+  const overflowsRight = rightPx + PANEL_MARGIN_PX + PANEL_WIDTH_PX > stageWidthPx;
+  return {
+    x: overflowsRight
+      ? Math.max(leftPx - PANEL_MARGIN_PX - PANEL_WIDTH_PX, PANEL_MARGIN_PX)
+      : rightPx + PANEL_MARGIN_PX,
+    y: Math.max(topPx, PANEL_MARGIN_PX),
+  };
+}
 
 function isTypingInField(): boolean {
   const el = document.activeElement;
@@ -115,6 +132,7 @@ export function PlannerCanvas() {
     removeZone,
     removeSelectedZone,
     selectZone,
+    updateTable,
   } = store;
 
   // en dessous de "md" la sidebar devient un tiroir superposé (voir
@@ -263,20 +281,26 @@ export function PlannerCanvas() {
   );
   const selectedZone = zones.find((z) => z.id === selectedZoneId) ?? null;
 
-  // ancre du menu contextuel de la zone sélectionnée : à droite de la zone,
-  // ou à gauche si ça déborderait du canvas
   let zonePanelPos: { x: number; y: number } | null = null;
   if (selectedZone) {
     const zoneRightPx = origin.x + (selectedZone.x + selectedZone.widthCm) * scale;
     const zoneLeftPx = origin.x + selectedZone.x * scale;
     const zoneTopPx = origin.y + selectedZone.y * scale;
-    const overflowsRight = zoneRightPx + ZONE_PANEL_MARGIN_PX + ZONE_PANEL_WIDTH_PX > stageSize.width;
-    zonePanelPos = {
-      x: overflowsRight
-        ? Math.max(zoneLeftPx - ZONE_PANEL_MARGIN_PX - ZONE_PANEL_WIDTH_PX, ZONE_PANEL_MARGIN_PX)
-        : zoneRightPx + ZONE_PANEL_MARGIN_PX,
-      y: Math.max(zoneTopPx, ZONE_PANEL_MARGIN_PX),
-    };
+    zonePanelPos = computePanelPosition(zoneLeftPx, zoneRightPx, zoneTopPx, stageSize.width);
+  }
+
+  // menu contextuel d'une table seule sélectionnée (jamais pour un
+  // multi-sélection, ni pour une chaise) — remplace alors la barre flottante
+  // générique "N éléments sélectionnés"
+  const singleSelectedTable: TableObject | undefined =
+    selectedCount === 1
+      ? (objects.find((o) => o.id === selectedIds[0] && o.kind === "table") as TableObject | undefined)
+      : undefined;
+
+  let tablePanelPos: { x: number; y: number } | null = null;
+  if (singleSelectedTable) {
+    const box = getObjectBoundsPx(singleSelectedTable, scale, origin);
+    tablePanelPos = computePanelPosition(box.x, box.x + box.width, box.y, stageSize.width);
   }
 
   const roomLabel = room.kind === "passerelle" ? PASSERELLE_DISPLAY_NAME : "Plan de salle";
@@ -307,6 +331,7 @@ export function PlannerCanvas() {
         onAddZone={addZone}
         selectedCount={selectedCount}
         hasSelectedTable={hasSelectedTable}
+        hasContextPanel={!!singleSelectedTable}
         onRotate={rotateSelectedTables}
         onDelete={removeSelected}
         onExportJpeg={handleExportJpeg}
@@ -386,13 +411,28 @@ export function PlannerCanvas() {
             x={zonePanelPos.x}
             y={zonePanelPos.y}
             onRename={(name) => updateZone(selectedZone.id, { name })}
+            onResize={(widthCm, heightCm) => updateZone(selectedZone.id, { widthCm, heightCm })}
             onRecolor={(color) => updateZone(selectedZone.id, { color })}
             onDelete={() => removeZone(selectedZone.id)}
             onClose={() => selectZone(null)}
           />
         )}
 
-        {selectedCount > 0 && (
+        {singleSelectedTable && tablePanelPos && (
+          <TablePanel
+            key={singleSelectedTable.id}
+            table={singleSelectedTable}
+            x={tablePanelPos.x}
+            y={tablePanelPos.y}
+            onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
+            onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
+            onRotate={rotateSelectedTables}
+            onDelete={removeSelected}
+            onClose={clearSelection}
+          />
+        )}
+
+        {selectedCount > 0 && !singleSelectedTable && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full border border-black/10 bg-white/90 dark:bg-[#232823]/90 dark:border-white/10 px-3 py-2 shadow-lg backdrop-blur">
             <span className="px-2 text-sm text-[#3F5A45] dark:text-[#B9D3BC]">
               {selectedCount} élément{selectedCount > 1 ? "s" : ""} sélectionné

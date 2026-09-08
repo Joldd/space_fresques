@@ -8,6 +8,7 @@ import type { ZoneObject } from "@/lib/planner/types";
 import { cmToPx, pxToCm } from "@/lib/planner/scale";
 import { MIN_ZONE_SIZE_CM } from "@/lib/planner/zones";
 import { setCanvasCursor } from "@/lib/planner/cursor";
+import { withAlpha } from "@/lib/planner/color";
 
 type ZonePatch = Partial<Pick<ZoneObject, "x" | "y" | "widthCm" | "heightCm">>;
 
@@ -19,18 +20,6 @@ type ZoneProps = {
   onSelect: (id: string) => void;
   onChange: (id: string, patch: ZonePatch) => void;
 };
-
-/** "#RRGGBB" (ou "#RGB") -> "rgba(r, g, b, alpha)" */
-function withAlpha(hex: string, alpha: number): string {
-  const clean = hex.replace("#", "");
-  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
-  const n = parseInt(full, 16);
-  if (Number.isNaN(n)) return `rgba(122, 158, 126, ${alpha})`;
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 /**
  * Zone rectangulaire étirable posée librement sur le plan (non contrainte

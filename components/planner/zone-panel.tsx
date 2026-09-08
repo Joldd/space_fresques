@@ -1,9 +1,12 @@
 // components/planner/zone-panel.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ZoneObject } from "@/lib/planner/types";
-import { ZONE_COLOR_PALETTE } from "@/lib/planner/zones";
+import { COLOR_PALETTE } from "@/lib/planner/color";
+import { useCloseOnOutsideClick } from "@/lib/planner/use-close-on-outside-click";
+import { MIN_ZONE_SIZE_CM } from "@/lib/planner/zones";
+import { SizeFields } from "./size-fields";
 
 type ZonePanelProps = {
   zone: ZoneObject;
@@ -11,41 +14,21 @@ type ZonePanelProps = {
   x: number;
   y: number;
   onRename: (name: string) => void;
+  onResize: (widthCm: number, heightCm: number) => void;
   onRecolor: (color: string) => void;
   onDelete: () => void;
   onClose: () => void;
 };
 
 /**
- * Menu contextuel (nom, couleur, suppression) d'une zone sélectionnée.
- * Le composant parent doit le monter avec `key={zone.id}` : passer d'une
- * zone à l'autre remonte alors le panneau et réinitialise ce brouillon de
- * nom, sans effet de synchronisation supplémentaire.
+ * Menu contextuel (nom, dimensions, couleur, suppression) d'une zone
+ * sélectionnée. Le composant parent doit le monter avec `key={zone.id}` :
+ * passer d'une zone à l'autre remonte alors le panneau et réinitialise ce
+ * brouillon de nom, sans effet de synchronisation supplémentaire.
  */
-export function ZonePanel({ zone, x, y, onRename, onRecolor, onDelete, onClose }: ZonePanelProps) {
+export function ZonePanel({ zone, x, y, onRename, onResize, onRecolor, onDelete, onClose }: ZonePanelProps) {
   const [name, setName] = useState(zone.name);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handlePointerDown(e: MouseEvent) {
-      if (panelRef.current?.contains(e.target as Node)) return;
-      // les clics sur le canvas (sélectionner une autre zone, un meuble, le
-      // vide...) sont déjà gérés par le Stage lui-même — le laisser décider
-      // évite une course où ce listener fermerait le panneau juste après
-      // qu'un clic sur une autre zone l'ait rouvert pour elle.
-      if ((e.target as HTMLElement)?.tagName === "CANVAS") return;
-      onClose();
-    }
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
+  const panelRef = useCloseOnOutsideClick<HTMLDivElement>(onClose);
 
   function commitName() {
     const trimmed = name.trim();
@@ -72,8 +55,17 @@ export function ZonePanel({ zone, x, y, onRename, onRecolor, onDelete, onClose }
         className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2.5 py-1.5 text-sm text-[#4A4636] dark:text-[#D8D2BE] outline-none focus:ring-2 focus:ring-[#7A9E7E]"
       />
 
+      <SizeFields
+        widthM={zone.widthCm / 100}
+        heightM={zone.heightCm / 100}
+        widthLabel="Largeur"
+        heightLabel="Hauteur"
+        min={MIN_ZONE_SIZE_CM / 100}
+        onResize={(widthM, heightM) => onResize(Math.round(widthM * 100), Math.round(heightM * 100))}
+      />
+
       <div className="flex items-center gap-2 flex-wrap">
-        {ZONE_COLOR_PALETTE.map((c) => (
+        {COLOR_PALETTE.map((c) => (
           <button
             key={c}
             type="button"

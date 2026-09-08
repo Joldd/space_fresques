@@ -47,6 +47,8 @@ export type TableObject = {
   widthCm: number;
   depthCm: number;
   rotation: Rotation;
+  /** couleur pleine (hex) ; `undefined` sur d'anciens plans sauvegardés -> DEFAULT_TABLE_COLOR */
+  color?: string;
 };
 
 export type ChairObject = {

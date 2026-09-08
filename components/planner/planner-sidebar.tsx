@@ -15,6 +15,8 @@ type PlannerSideBarProps = {
   onAddZone: () => void;
   selectedCount: number;
   hasSelectedTable: boolean;
+  /** une table seule sélectionnée affiche son propre menu contextuel sur le canvas — la carte "Sélection" générique serait redondante */
+  hasContextPanel: boolean;
   onRotate: () => void;
   onDelete: () => void;
   onExportJpeg: () => void;
@@ -93,6 +95,7 @@ export function PlannerSideBar({
   onAddZone,
   selectedCount,
   hasSelectedTable,
+  hasContextPanel,
   onRotate,
   onDelete,
   onExportJpeg,
@@ -290,7 +293,7 @@ export function PlannerSideBar({
         </form>
       </Card> */}
 
-      {selectedCount > 0 && (
+      {selectedCount > 0 && !hasContextPanel && (
         <Card title="Sélection">
           <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
             {selectedCount} élément{selectedCount > 1 ? "s" : ""} sélectionné

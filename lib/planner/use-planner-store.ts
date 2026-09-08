@@ -9,15 +9,17 @@ import {
   DEFAULT_ZONE_HEIGHT_CM,
   DEFAULT_ZONE_WIDTH_CM,
   MIN_ZONE_SIZE_CM,
-  ZONE_COLOR_PALETTE,
   isValidZone,
 } from "./zones";
+import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "./color";
 
 const STORAGE_KEY = "space-fresques:planner";
 
 export const DEFAULT_ROOM: Room = PASSERELLE_ROOM;
 export const DEFAULT_TABLE = { widthCm: 200, depthCm: 300 };
 export const DEFAULT_CHAIR = { diameterCm: 80 };
+/** en dessous, une table devient trop petite pour être maniable */
+const MIN_TABLE_SIZE_CM = 20;
 
 type State = {
   room: Room;
@@ -48,7 +50,8 @@ type Action =
   | { type: "UPDATE_ZONE"; id: string; patch: ZonePatch }
   | { type: "REMOVE_ZONE"; id: string }
   | { type: "REMOVE_SELECTED_ZONE" }
-  | { type: "SELECT_ZONE"; id: string | null };
+  | { type: "SELECT_ZONE"; id: string | null }
+  | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">> };
 
 function nextRotation(rotation: Rotation): Rotation {
   return ((rotation + 90) % 360) as Rotation;
@@ -147,6 +150,7 @@ function reducer(state: State, action: Action): State {
         widthCm: action.widthCm,
         depthCm: action.depthCm,
         rotation: 0,
+        color: DEFAULT_TABLE_COLOR,
       };
       return {
         ...state,
@@ -244,7 +248,7 @@ function reducer(state: State, action: Action): State {
         y,
         widthCm: DEFAULT_ZONE_WIDTH_CM,
         heightCm: DEFAULT_ZONE_HEIGHT_CM,
-        color: ZONE_COLOR_PALETTE[state.zones.length % ZONE_COLOR_PALETTE.length],
+        color: COLOR_PALETTE[state.zones.length % COLOR_PALETTE.length],
         name: `Zone ${state.zones.length + 1}`,
       };
       return {
@@ -291,6 +295,24 @@ function reducer(state: State, action: Action): State {
         selectedZoneId: action.id,
         selectedIds: action.id === null ? state.selectedIds : [],
       };
+
+    case "UPDATE_TABLE": {
+      const patch = { ...action.patch };
+      if (patch.widthCm !== undefined) patch.widthCm = Math.max(patch.widthCm, MIN_TABLE_SIZE_CM);
+      if (patch.depthCm !== undefined) patch.depthCm = Math.max(patch.depthCm, MIN_TABLE_SIZE_CM);
+      return {
+        ...state,
+        objects: state.objects.map((obj) => {
+          if (obj.id !== action.id || obj.kind !== "table") return obj;
+          const updated = { ...obj, ...patch };
+          // les nouvelles dimensions peuvent faire dépasser la table du
+          // contour de la salle : on la ramène à l'intérieur, comme pour
+          // n'importe quel autre déplacement
+          const { x, y } = clampObjectPosition(updated, state.room.polygon);
+          return { ...updated, x, y };
+        }),
+      };
+    }
 
     default:
       return state;
@@ -413,6 +435,11 @@ export function usePlannerStore() {
     (id: string | null) => dispatch({ type: "SELECT_ZONE", id }),
     [],
   );
+  const updateTable = useCallback(
+    (id: string, patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">>) =>
+      dispatch({ type: "UPDATE_TABLE", id, patch }),
+    [],
+  );
 
   return {
     room: state.room,
@@ -436,6 +463,7 @@ export function usePlannerStore() {
     removeZone,
     removeSelectedZone,
     selectZone,
+    updateTable,
   };
 }
 
