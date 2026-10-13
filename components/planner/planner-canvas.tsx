@@ -589,6 +589,7 @@ export function PlannerCanvas() {
               table={singleSelectedTable}
               x={tablePanelPos.x}
               y={tablePanelPos.y}
+              onRename={(name) => updateTable(singleSelectedTable.id, { name })}
               onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
               onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
               onRotate={rotateSelectedTables}

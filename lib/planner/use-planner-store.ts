@@ -62,7 +62,7 @@ type Action =
   | { type: "REMOVE_ZONE"; id: string }
   | { type: "REMOVE_SELECTED_ZONE" }
   | { type: "SELECT_ZONE"; id: string | null }
-  | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">> }
+  | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color" | "name">> }
   | { type: "PUSH_HISTORY" }
   | { type: "UNDO" }
   | { type: "COPY_SELECTION" }
@@ -544,7 +544,7 @@ export function usePlannerStore() {
     [],
   );
   const updateTable = useCallback(
-    (id: string, patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color">>) =>
+    (id: string, patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color" | "name">>) =>
       dispatch({ type: "UPDATE_TABLE", id, patch }),
     [],
   );

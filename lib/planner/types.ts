@@ -49,6 +49,8 @@ export type TableObject = {
   rotation: Rotation;
   /** couleur pleine (hex) ; `undefined` sur d'anciens plans sauvegardés -> DEFAULT_TABLE_COLOR */
   color?: string;
+  /** nom libre affiché sur la table ; optionnel (absent ou vide = pas de nom) */
+  name?: string;
 };
 
 export type ChairObject = {

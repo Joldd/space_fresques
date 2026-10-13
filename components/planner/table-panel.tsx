@@ -1,6 +1,7 @@
 // components/planner/table-panel.tsx
 "use client";
 
+import { useState } from "react";
 import type { TableObject } from "@/lib/planner/types";
 import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "@/lib/planner/color";
 import { useCloseOnOutsideClick } from "@/lib/planner/use-close-on-outside-click";
@@ -11,6 +12,7 @@ type TablePanelProps = {
   /** position d'ancrage, en px, relative au conteneur du canvas */
   x: number;
   y: number;
+  onRename: (name: string) => void;
   onResize: (widthCm: number, depthCm: number) => void;
   onRecolor: (color: string) => void;
   onRotate: () => void;
@@ -21,15 +23,18 @@ type TablePanelProps = {
 };
 
 /**
- * Menu contextuel (dimensions, couleur, rotation, suppression) d'une table
- * sélectionnée seule — même principe que ZonePanel, mais sans nom : une
- * table ne se redimensionne pas à la souris (contrairement à une zone), on
- * ne peut que la déplacer et ajuster ses dimensions ici.
+ * Menu contextuel (nom, dimensions, couleur, rotation, suppression) d'une
+ * table sélectionnée seule — même principe que ZonePanel (à monter avec
+ * `key={table.id}` pour réinitialiser le brouillon de nom). Une table ne se
+ * redimensionne pas à la souris (contrairement à une zone), on ne peut que
+ * la déplacer et ajuster ses dimensions ici. Le nom est facultatif : le
+ * vider retire le nom affiché sur la table.
  */
 export function TablePanel({
   table,
   x,
   y,
+  onRename,
   onResize,
   onRecolor,
   onRotate,
@@ -37,8 +42,15 @@ export function TablePanel({
   onClose,
   onBeginChange,
 }: TablePanelProps) {
+  const [name, setName] = useState(table.name ?? "");
   const panelRef = useCloseOnOutsideClick<HTMLDivElement>(onClose);
   const color = table.color ?? DEFAULT_TABLE_COLOR;
+
+  function commitName() {
+    const trimmed = name.trim();
+    setName(trimmed);
+    if (trimmed !== (table.name ?? "")) onRename(trimmed);
+  }
 
   return (
     <div
@@ -47,6 +59,19 @@ export function TablePanel({
       className="absolute z-20 w-60 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#232823] p-3 shadow-xl flex flex-col gap-3"
       onMouseDown={(e) => e.stopPropagation()}
     >
+      <input
+        type="text"
+        value={name}
+        onFocus={onBeginChange}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commitName}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        placeholder="Nom de la table"
+        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2.5 py-1.5 text-sm text-[#4A4636] dark:text-[#D8D2BE] outline-none focus:ring-2 focus:ring-[#7A9E7E]"
+      />
+
       <SizeFields
         widthM={table.widthCm / 100}
         heightM={table.depthCm / 100}
