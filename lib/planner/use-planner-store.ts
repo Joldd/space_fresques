@@ -12,6 +12,7 @@ import {
   isValidZone,
 } from "./zones";
 import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "./color";
+import type { PlanData } from "./plan-file";
 
 const STORAGE_KEY = "space-fresques:planner";
 
@@ -67,7 +68,8 @@ type Action =
   | { type: "UNDO" }
   | { type: "COPY_SELECTION" }
   | { type: "PASTE" }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  | { type: "OPEN_PLAN"; plan: PlanData };
 
 function nextRotation(rotation: Rotation): Rotation {
   return ((rotation + 90) % 360) as Rotation;
@@ -420,6 +422,19 @@ function reducer(state: State, action: Action): State {
         past: withHistory(state),
       };
 
+    case "OPEN_PLAN":
+      // ouverture d'un plan enregistré ou importé : remplace tout le plan
+      // en cours, mais reste annulable par Ctrl+Z (contrairement à LOAD)
+      return {
+        ...state,
+        past: withHistory(state),
+        room: action.plan.room,
+        objects: clampAllObjects(action.plan.objects, action.plan.room),
+        zones: action.plan.zones,
+        selectedIds: [],
+        selectedZoneId: null,
+      };
+
     default:
       return state;
   }
@@ -553,6 +568,7 @@ export function usePlannerStore() {
   const copySelection = useCallback(() => dispatch({ type: "COPY_SELECTION" }), []);
   const paste = useCallback(() => dispatch({ type: "PASTE" }), []);
   const resetPlan = useCallback(() => dispatch({ type: "RESET" }), []);
+  const openPlan = useCallback((plan: PlanData) => dispatch({ type: "OPEN_PLAN", plan }), []);
 
   return {
     room: state.room,
@@ -584,6 +600,7 @@ export function usePlannerStore() {
     copySelection,
     paste,
     resetPlan,
+    openPlan,
   };
 }
 

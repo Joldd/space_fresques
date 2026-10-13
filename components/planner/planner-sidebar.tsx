@@ -5,6 +5,8 @@ import { useState, useEffect, type FormEvent } from "react";
 import type { Room } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
 import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
+import type { PlanData } from "@/lib/planner/plan-file";
+import { PlanLibrary } from "./plan-library";
 
 type PlannerSideBarProps = {
   room: Room;
@@ -21,6 +23,8 @@ type PlannerSideBarProps = {
   onDelete: () => void;
   onExportJpeg: () => void;
   onExportPdf: () => void;
+  currentPlan: PlanData;
+  onOpenPlan: (plan: PlanData) => void;
   /**
    * En dessous du breakpoint "md", la sidebar devient un tiroir superposé
    * (voir SIDEBAR_BREAKPOINT_PX) : `open` contrôle sa visibilité et `onClose`
@@ -100,6 +104,8 @@ export function PlannerSideBar({
   onDelete,
   onExportJpeg,
   onExportPdf,
+  currentPlan,
+  onOpenPlan,
   open,
   onClose,
 }: PlannerSideBarProps) {
@@ -277,6 +283,10 @@ export function PlannerSideBar({
               📄 PDF
             </button>
           </div>
+        </Card>
+
+        <Card title="Mes plans">
+          <PlanLibrary currentPlan={currentPlan} onOpenPlan={onOpenPlan} />
         </Card>
 
         {/* Pas besoin de chaises pour l'instant */}

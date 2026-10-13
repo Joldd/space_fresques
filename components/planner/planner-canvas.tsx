@@ -1,7 +1,7 @@
 // components/planner/planner-canvas.tsx
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer } from "react-konva";
 import type Konva from "konva";
 import { PlannerSideBar } from "./planner-sidebar";
@@ -19,6 +19,7 @@ import { polygonBounds } from "@/lib/planner/geometry";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import { PASSERELLE_DISPLAY_NAME, roomCollisionPolygon } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
+import { slugify } from "@/lib/planner/slugify";
 import type { RectArea, SceneObject, TableObject } from "@/lib/planner/types";
 
 /** zoom manuel (Ctrl + molette) : 1 = vue ajustée à l'écran (comportement d'origine), jamais moins */
@@ -27,18 +28,6 @@ const ZOOM_MAX = 4;
 const ZOOM_WHEEL_SENSITIVITY = 0.0015;
 /** facteur appliqué à chaque clic sur les boutons +/- */
 const ZOOM_BUTTON_FACTOR = 1.25;
-
-/** "Rue intérieure Saint-Paul" -> "rue-interieure-saint-paul", pour les noms de fichier exportés */
-function slugify(text: string): string {
-  return (
-    text
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "plan"
-  );
-}
 
 /** largeur estimée d'un menu contextuel (zone ou table), pour éviter qu'il ne déborde du canvas */
 const PANEL_WIDTH_PX = 240;
@@ -146,6 +135,7 @@ export function PlannerCanvas() {
     copySelection,
     paste,
     resetPlan,
+    openPlan,
   } = store;
 
   // en dessous de "md" la sidebar devient un tiroir superposé (voir
@@ -441,6 +431,8 @@ export function PlannerCanvas() {
     downloadCanvasAsPdf(canvas, `${exportFilenameBase}.pdf`);
   }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
 
+  const currentPlan = useMemo(() => ({ room, objects, zones }), [room, objects, zones]);
+
   const handleReset = useCallback(() => {
     const confirmed = window.confirm(
       `Réinitialiser le plan ?\n\nLa salle repasse à ${PASSERELLE_DISPLAY_NAME}, et toutes les tables, chaises et zones actuelles sont supprimées. Ctrl+Z permet de revenir en arrière juste après.`,
@@ -464,6 +456,8 @@ export function PlannerCanvas() {
         onDelete={removeSelected}
         onExportJpeg={handleExportJpeg}
         onExportPdf={handleExportPdf}
+        currentPlan={currentPlan}
+        onOpenPlan={openPlan}
         open={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
