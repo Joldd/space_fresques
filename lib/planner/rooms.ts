@@ -1,6 +1,6 @@
 // lib/planner/rooms.ts
-import type { DimensionLabel, Point, Room } from "./types";
-import { flattenCurvedPolygon, polygonBounds, rectanglePolygon } from "./geometry";
+import type { DimensionLabel, Room, RoomObstacle } from "./types";
+import { flattenCurvedPolygon, polygonBounds, rectanglePolygon, type FloorArea } from "./geometry";
 
 /** nom affiché à l'utilisateur pour la salle "passerelle" (nom de code interne inchangé) */
 export const PASSERELLE_DISPLAY_NAME = "Rue intérieure Saint-Paul";
@@ -12,7 +12,8 @@ export const PASSERELLE_DISPLAY_NAME = "Rue intérieure Saint-Paul";
  * le croquis). Le reste de la bosse et le rétrécissement en pied sont
  * estimés à partir des proportions du croquis. La petite niche d'escalier
  * signalée en pointillés (passerelle en hauteur) n'est pas modélisée : elle
- * n'affecte pas le sol utilisable.
+ * n'affecte pas le sol utilisable. L'escalier qui y monte, lui, est un
+ * obstacle : voir PASSERELLE_OBSTACLES.
  *
  * Le mur de la bosse (haut-droit) est en réalité arrondi : le sommet à
  * 21 m sert de point de contrôle d'une courbe entre ses deux voisins plutôt
@@ -46,6 +47,16 @@ const PASSERELLE_DIMENSION_LABELS: DimensionLabel[] = [
   { fromIndex: 8, toIndex: 9, side: "bottom" }, // (8.5,65.5) -> (0,65.5) : 8.5 m
 ];
 
+/**
+ * Escalier montant à la passerelle (carré du croquis client, sous la
+ * passerelle côté gauche) : ~4 m × 3,2 m, à 6 m du mur gauche et ~17,4 m du
+ * mur du haut — position relevée sur le croquis, dans le même repère que
+ * PASSERELLE_POINTS_M (calé sur les sommets de la bosse).
+ */
+const PASSERELLE_OBSTACLES: RoomObstacle[] = [
+  { label: "Escalier", x: 600, y: 1740, widthCm: 400, heightCm: 320 },
+];
+
 function metersPolygonToCm(points: [number, number][]) {
   return points.map(([x, y]) => ({ x: x * 100, y: y * 100 }));
 }
@@ -55,6 +66,7 @@ function roomFromPolygonM(
   points: [number, number][],
   curvedVertices?: number[],
   dimensionLabels?: DimensionLabel[],
+  obstacles?: RoomObstacle[],
 ): Room {
   const polygon = metersPolygonToCm(points);
   const bounds = polygonBounds(polygon);
@@ -65,6 +77,7 @@ function roomFromPolygonM(
     heightM: (bounds.maxY - bounds.minY) / 100,
     curvedVertices,
     dimensionLabels,
+    obstacles,
   };
 }
 
@@ -73,6 +86,7 @@ export const PASSERELLE_ROOM: Room = roomFromPolygonM(
   PASSERELLE_POINTS_M,
   PASSERELLE_CURVED_VERTICES,
   PASSERELLE_DIMENSION_LABELS,
+  PASSERELLE_OBSTACLES,
 );
 
 export function makeRectangleRoom(widthM: number, heightM: number): Room {
@@ -84,21 +98,29 @@ export function makeRectangleRoom(widthM: number, heightM: number): Room {
   };
 }
 
-const collisionPolygonCache = new WeakMap<Room, Point[]>();
+const floorAreaCache = new WeakMap<Room, FloorArea>();
 
 /**
- * Contour à utiliser pour contenir tables et chaises : celui de la salle
+ * Surface où l'on peut poser tables et chaises : le contour de la salle
  * telle que dessinée, arrondis compris (le `polygon` brut, lui, passe par
- * les points de contrôle des arrondis). Mis en cache par salle, car appelé
- * en boucle pendant un drag.
+ * les points de contrôle des arrondis), moins ses obstacles. Mise en cache
+ * par salle, car appelée en boucle pendant un drag.
  */
-export function roomCollisionPolygon(room: Room): Point[] {
-  let poly = collisionPolygonCache.get(room);
-  if (!poly) {
-    poly = flattenCurvedPolygon(room.polygon, room.curvedVertices);
-    collisionPolygonCache.set(room, poly);
+export function roomFloorArea(room: Room): FloorArea {
+  let area = floorAreaCache.get(room);
+  if (!area) {
+    area = {
+      outline: flattenCurvedPolygon(room.polygon, room.curvedVertices),
+      holes: (room.obstacles ?? []).map(({ x, y, widthCm, heightCm }) => [
+        { x, y },
+        { x: x + widthCm, y },
+        { x: x + widthCm, y: y + heightCm },
+        { x, y: y + heightCm },
+      ]),
+    };
+    floorAreaCache.set(room, area);
   }
-  return poly;
+  return area;
 }
 
 /** vérifie qu'un objet chargé depuis le stockage a bien la forme d'une salle valide */

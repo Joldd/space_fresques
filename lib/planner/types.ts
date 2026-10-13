@@ -24,6 +24,18 @@ export type Room = {
    * à la décrire — on annote plutôt certains segments du contour un par un.
    */
   dimensionLabels?: DimensionLabel[];
+  /** éléments fixes de la salle (ex. escalier) sur lesquels on ne peut rien poser */
+  obstacles?: RoomObstacle[];
+};
+
+/** rectangle fixe infranchissable, dessiné sur le plan avec son libellé */
+export type RoomObstacle = {
+  label: string;
+  /** coin haut-gauche, en cm, dans le repère de la salle */
+  x: number;
+  y: number;
+  widthCm: number;
+  heightCm: number;
 };
 
 export type DimensionLabelSide = "top" | "bottom" | "left" | "right";

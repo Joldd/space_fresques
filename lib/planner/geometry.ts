@@ -180,32 +180,71 @@ export function objectFootprintPoints(obj: SceneObject): Point[] {
   }));
 }
 
-export function isObjectInsidePolygon(obj: SceneObject, poly: Polygon): boolean {
+/**
+ * Surface au sol utilisable pour les meubles : le contour de la salle, moins
+ * des "trous" (obstacles fixes comme un escalier) que rien ne peut chevaucher.
+ */
+export type FloorArea = { outline: Polygon; holes: Polygon[] };
+
+/** orientation du triangle (a, b, c) : > 0 sens direct, < 0 sens indirect, 0 alignés */
+function orientation(a: Point, b: Point, c: Point): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** les segments [p1, p2] et [p3, p4] se croisent franchement (un simple contact ne compte pas) */
+function segmentsCross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
+  const d1 = orientation(p3, p4, p1);
+  const d2 = orientation(p3, p4, p2);
+  const d3 = orientation(p1, p2, p3);
+  const d4 = orientation(p1, p2, p4);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+/**
+ * Deux polygones se chevauchent : un sommet de l'un est dans l'autre, ou
+ * deux côtés se croisent (cas d'un "+" où aucun sommet n'est dans l'autre).
+ */
+export function polygonsOverlap(a: Polygon, b: Polygon): boolean {
+  if (a.some((pt) => pointInPolygon(pt, b)) || b.some((pt) => pointInPolygon(pt, a))) return true;
+  for (let i = 0; i < a.length; i++) {
+    const a1 = a[i];
+    const a2 = a[(i + 1) % a.length];
+    for (let j = 0; j < b.length; j++) {
+      if (segmentsCross(a1, a2, b[j], b[(j + 1) % b.length])) return true;
+    }
+  }
+  return false;
+}
+
+export function isObjectInsideArea(obj: SceneObject, area: FloorArea): boolean {
   const footprint = objectFootprintPoints(obj);
   // coins dans la salle ET aucun sommet du contour dans l'objet : sans ce
   // second test, un mur rentrant (ex. un arrondi qui bombe vers l'intérieur)
   // pourrait traverser le milieu d'un côté de table dont les coins, eux,
   // restent à l'intérieur
   return (
-    footprint.every((pt) => pointInPolygon(pt, poly)) &&
-    !poly.some((pt) => pointInPolygon(pt, footprint))
+    footprint.every((pt) => pointInPolygon(pt, area.outline)) &&
+    !area.outline.some((pt) => pointInPolygon(pt, footprint)) &&
+    !area.holes.some((hole) => polygonsOverlap(footprint, hole))
   );
 }
 
 /**
  * Réduit un déplacement de groupe (dx, dy) pour que tous les objets fournis
- * restent entièrement à l'intérieur du polygone — le groupe glisse et
- * s'arrête au contact du mur plutôt que d'être bloqué net.
+ * restent entièrement dans la surface utilisable — le groupe glisse et
+ * s'arrête au contact du mur (ou d'un obstacle) plutôt que d'être bloqué net.
+ * Seule la position d'arrivée compte : un drag qui "saute" par-dessus un
+ * obstacle vers une place libre est accepté.
  */
 export function clampGroupDelta(
   objects: SceneObject[],
   dxCm: number,
   dyCm: number,
-  poly: Polygon,
+  area: FloorArea,
 ): { dx: number; dy: number } {
   const validAt = (t: number) =>
     objects.every((obj) =>
-      isObjectInsidePolygon({ ...obj, x: obj.x + dxCm * t, y: obj.y + dyCm * t }, poly),
+      isObjectInsideArea({ ...obj, x: obj.x + dxCm * t, y: obj.y + dyCm * t }, area),
     );
 
   if (validAt(1)) return { dx: dxCm, dy: dyCm };
@@ -222,17 +261,18 @@ export function clampGroupDelta(
 }
 
 /**
- * Si l'objet est hors du polygone, le ramène au plus près à l'intérieur
- * (en le rapprochant progressivement du centroïde de la salle).
+ * Si l'objet est hors de la surface utilisable (hors salle ou sur un
+ * obstacle), le ramène au plus près (en le rapprochant progressivement du
+ * centroïde de la salle).
  */
-export function clampObjectPosition(obj: SceneObject, poly: Polygon): Point {
-  if (isObjectInsidePolygon(obj, poly)) return { x: obj.x, y: obj.y };
+export function clampObjectPosition(obj: SceneObject, area: FloorArea): Point {
+  if (isObjectInsideArea(obj, area)) return { x: obj.x, y: obj.y };
 
-  const target = polygonCentroid(poly);
+  const target = polygonCentroid(area.outline);
   const dx = target.x - obj.x;
   const dy = target.y - obj.y;
   const validAt = (t: number) =>
-    isObjectInsidePolygon({ ...obj, x: obj.x + dx * t, y: obj.y + dy * t }, poly);
+    isObjectInsideArea({ ...obj, x: obj.x + dx * t, y: obj.y + dy * t }, area);
 
   if (!validAt(1)) return target; // objet trop grand pour la salle : au mieux, au centre
 

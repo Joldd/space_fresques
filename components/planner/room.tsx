@@ -1,12 +1,13 @@
 // components/planner/room.tsx
 "use client";
 
-import { Group, Line, Shape, Text } from "react-konva";
+import { Group, Line, Rect, Shape, Text } from "react-konva";
 import type Konva from "konva";
 import type { Room } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
-import { roomCollisionPolygon } from "@/lib/planner/rooms";
+import { roomFloorArea } from "@/lib/planner/rooms";
+import { fitFontSize } from "@/lib/planner/fit-text";
 import { DimensionLabel } from "./dimension-label";
 
 type RoomProps = {
@@ -16,6 +17,9 @@ type RoomProps = {
 };
 
 const GRID_STEP_CM = 100; // une ligne de repère par mètre
+
+const OBSTACLE_FONT = { fontFamily: "Arial", fontStyle: "600", lineHeight: 1.1, minFontSize: 6, maxFontSize: 14 };
+const OBSTACLE_PADDING_PX = 4;
 
 /** 850 -> "8.5 m", 1200 -> "12 m" */
 function formatMeters(cm: number): string {
@@ -30,7 +34,7 @@ export function Room({ room, scale, origin }: RoomProps) {
   const pointsPx = room.polygon.map((p) => ({ x: cmToPx(p.x, scale), y: cmToPx(p.y, scale) }));
   // contour arrondis compris (et non le polygone brut, qui passe par les
   // points de contrôle des arrondis) : c'est lui qui porte l'ombre ci-dessous
-  const shadowPointsPx = roomCollisionPolygon(room).flatMap((p) => [cmToPx(p.x, scale), cmToPx(p.y, scale)]);
+  const shadowPointsPx = roomFloorArea(room).outline.flatMap((p) => [cmToPx(p.x, scale), cmToPx(p.y, scale)]);
 
   // découpe la grille à la forme exacte du contour de la salle (arrondis compris)
   function clipToRoom(ctx: Konva.Context) {
@@ -90,6 +94,41 @@ export function Room({ room, scale, origin }: RoomProps) {
         {verticalLines}
         {horizontalLines}
       </Group>
+      {/*
+        obstacles fixes (escalier...) : purement décoratifs côté événements
+        (listening={false}) — un clic dessus agit comme un clic sur le fond
+        de salle ; c'est roomFloorArea qui empêche d'y poser des meubles
+      */}
+      {(room.obstacles ?? []).map((obstacle) => {
+        const x = cmToPx(obstacle.x, scale);
+        const y = cmToPx(obstacle.y, scale);
+        const width = cmToPx(obstacle.widthCm, scale);
+        const height = cmToPx(obstacle.heightCm, scale);
+        const labelWidth = Math.max(width - OBSTACLE_PADDING_PX * 2, 0);
+        const labelHeight = Math.max(height - OBSTACLE_PADDING_PX * 2, 0);
+        const fontSize = fitFontSize(obstacle.label, labelWidth, labelHeight, OBSTACLE_FONT);
+        return (
+          <Group key={`${obstacle.label}-${obstacle.x}-${obstacle.y}`} listening={false}>
+            <Rect x={x} y={y} width={width} height={height} fill="#E6DAC2" stroke="#A8956E" strokeWidth={1.5} />
+            <Text
+              x={x + OBSTACLE_PADDING_PX}
+              y={y + OBSTACLE_PADDING_PX}
+              width={labelWidth}
+              height={labelHeight}
+              text={obstacle.label}
+              align="center"
+              verticalAlign="middle"
+              wrap="word"
+              ellipsis
+              fontSize={fontSize}
+              fontFamily={OBSTACLE_FONT.fontFamily}
+              fontStyle={OBSTACLE_FONT.fontStyle}
+              lineHeight={OBSTACLE_FONT.lineHeight}
+              fill="#7A6A4C"
+            />
+          </Group>
+        );
+      })}
       {room.dimensionLabels && room.dimensionLabels.length > 0 ? (
         // la salle est un polygone quelconque : une seule cote "largeur ×
         // hauteur" de la boîte englobante n'aurait pas de sens, on cote donc

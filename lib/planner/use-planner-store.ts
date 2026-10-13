@@ -3,16 +3,15 @@
 
 import { useCallback, useEffect, useReducer } from "react";
 import type { ChairObject, Room, Rotation, SceneObject, TableObject, ZoneObject } from "./types";
-import { PASSERELLE_ROOM, isValidRoom, makeRectangleRoom, roomCollisionPolygon } from "./rooms";
+import { PASSERELLE_ROOM, makeRectangleRoom, roomFloorArea } from "./rooms";
 import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry";
 import {
   DEFAULT_ZONE_HEIGHT_CM,
   DEFAULT_ZONE_WIDTH_CM,
   MIN_ZONE_SIZE_CM,
-  isValidZone,
 } from "./zones";
 import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "./color";
-import type { PlanData } from "./plan-file";
+import { sanitizePlanData, type PlanData } from "./plan-file";
 
 const STORAGE_KEY = "space-fresques:planner";
 
@@ -91,7 +90,7 @@ function mergeSelection(current: string[], ids: string[]): string[] {
 /** replace tous les objets à l'intérieur du polygone donné (best-effort, un par un) */
 function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
   return objects.map((obj) => {
-    const { x, y } = clampObjectPosition(obj, roomCollisionPolygon(room));
+    const { x, y } = clampObjectPosition(obj, roomFloorArea(room));
     return x === obj.x && y === obj.y ? obj : { ...obj, x, y };
   });
 }
@@ -122,7 +121,7 @@ function spawnPosition(state: State, footprint: Footprint): {
     y: (bounds.minY + bounds.maxY) / 2 + offset,
   };
   const probe = { id: "spawn-probe", ...footprint, ...candidate } as SceneObject;
-  return clampObjectPosition(probe, roomCollisionPolygon(state.room));
+  return clampObjectPosition(probe, roomFloorArea(state.room));
 }
 
 /**
@@ -228,7 +227,7 @@ function reducer(state: State, action: Action): State {
       if (state.selectedIds.length === 0) return state;
       const selected = new Set(state.selectedIds);
       const selectedObjects = state.objects.filter((obj) => selected.has(obj.id));
-      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, roomCollisionPolygon(state.room));
+      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, roomFloorArea(state.room));
       if (dx === 0 && dy === 0) return state;
       return {
         ...state,
@@ -346,7 +345,7 @@ function reducer(state: State, action: Action): State {
           // les nouvelles dimensions peuvent faire dépasser la table du
           // contour de la salle : on la ramène à l'intérieur, comme pour
           // n'importe quel autre déplacement
-          const { x, y } = clampObjectPosition(updated, roomCollisionPolygon(state.room));
+          const { x, y } = clampObjectPosition(updated, roomFloorArea(state.room));
           return { ...updated, x, y };
         }),
       };
@@ -392,7 +391,7 @@ function reducer(state: State, action: Action): State {
 
       const newObjects: SceneObject[] = clip.objects.map((o) => {
         const candidate = { ...o, id: crypto.randomUUID(), x: o.x + PASTE_OFFSET_CM, y: o.y + PASTE_OFFSET_CM };
-        const { x, y } = clampObjectPosition(candidate, roomCollisionPolygon(state.room));
+        const { x, y } = clampObjectPosition(candidate, roomFloorArea(state.room));
         return { ...candidate, x, y };
       });
       const newZones: ZoneObject[] = clip.zones.map((z) => ({
@@ -463,14 +462,11 @@ export function usePlannerStore() {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as {
-          room: unknown;
-          objects: SceneObject[];
-          zones?: unknown[];
-        };
-        const room = isValidRoom(saved.room) ? saved.room : DEFAULT_ROOM;
-        const zones = (saved.zones ?? []).filter(isValidZone);
-        dispatch({ type: "LOAD", room, objects: saved.objects ?? [], zones });
+        // même nettoyage qu'un fichier importé : la salle "passerelle" est
+        // remplacée par sa définition actuelle (contour, escalier...)
+        const saved = sanitizePlanData(JSON.parse(raw));
+        if (saved) dispatch({ type: "LOAD", ...saved });
+        else dispatch({ type: "MARK_HYDRATED" });
       } else {
         dispatch({ type: "MARK_HYDRATED" });
       }

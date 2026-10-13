@@ -3,9 +3,10 @@
 
 import { useMemo } from "react";
 import { Group, Rect, Text } from "react-konva";
-import type { Point, SceneObject, TableObject } from "@/lib/planner/types";
+import type { SceneObject, TableObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
+import type { FloorArea } from "@/lib/planner/geometry";
 import { setCanvasCursor } from "@/lib/planner/cursor";
 import { DEFAULT_TABLE_COLOR, darken } from "@/lib/planner/color";
 import { fitFontSize } from "@/lib/planner/fit-text";
@@ -20,7 +21,7 @@ type TableProps = {
   table: TableObject;
   scale: number;
   origin: { x: number; y: number };
-  roomPolygon: Point[];
+  roomArea: FloorArea;
   selected: boolean;
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
@@ -33,7 +34,7 @@ export function Table({
   table,
   scale,
   origin,
-  roomPolygon,
+  roomArea,
   selected,
   getDragGroup,
   onPointerDown,
@@ -71,7 +72,7 @@ export function Table({
   const { handleMouseDown, handleDragStart, handleDragMove, dragBoundFunc } = useConstrainedDrag({
     id: table.id,
     scale,
-    roomPolygon,
+    roomArea,
     getDragGroup,
     onPointerDown,
     onDragDelta,

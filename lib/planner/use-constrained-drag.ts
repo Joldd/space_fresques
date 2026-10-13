@@ -5,11 +5,11 @@ import { useRef } from "react";
 import type Konva from "konva";
 import type { Point, SceneObject } from "./types";
 import { cmToPx, pxToCm } from "./scale";
-import { clampGroupDelta } from "./geometry";
+import { clampGroupDelta, type FloorArea } from "./geometry";
 
 /**
  * Fabrique les handlers de drag Konva pour un objet (table ou chaise) qui ne
- * doit jamais sortir du contour de la salle, y compris quand il est déplacé
+ * doit jamais sortir du contour de la salle ni chevaucher un obstacle, y compris quand il est déplacé
  * avec le reste de la sélection.
  *
  * Le blocage visuel en temps réel passe par `dragBoundFunc` (exécuté de façon
@@ -19,7 +19,7 @@ import { clampGroupDelta } from "./geometry";
 export function useConstrainedDrag({
   id,
   scale,
-  roomPolygon,
+  roomArea,
   getDragGroup,
   onPointerDown,
   onDragDelta,
@@ -27,7 +27,7 @@ export function useConstrainedDrag({
 }: {
   id: string;
   scale: number;
-  roomPolygon: Point[];
+  roomArea: FloorArea;
   /** objets (avec leur position au début du drag) à déplacer ensemble avec ce nœud */
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
@@ -59,7 +59,7 @@ export function useConstrainedDrag({
 
     const dxCmRaw = pxToCm(pos.x - start.x, scale);
     const dyCmRaw = pxToCm(pos.y - start.y, scale);
-    const { dx, dy } = clampGroupDelta(group, dxCmRaw, dyCmRaw, roomPolygon);
+    const { dx, dy } = clampGroupDelta(group, dxCmRaw, dyCmRaw, roomArea);
     return { x: start.x + cmToPx(dx, scale), y: start.y + cmToPx(dy, scale) };
   }
 
