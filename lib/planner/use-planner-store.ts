@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useReducer } from "react";
 import type { ChairObject, Room, Rotation, SceneObject, TableObject, ZoneObject } from "./types";
-import { PASSERELLE_ROOM, isValidRoom, makeRectangleRoom } from "./rooms";
+import { PASSERELLE_ROOM, isValidRoom, makeRectangleRoom, roomCollisionPolygon } from "./rooms";
 import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry";
 import {
   DEFAULT_ZONE_HEIGHT_CM,
@@ -89,7 +89,7 @@ function mergeSelection(current: string[], ids: string[]): string[] {
 /** replace tous les objets à l'intérieur du polygone donné (best-effort, un par un) */
 function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
   return objects.map((obj) => {
-    const { x, y } = clampObjectPosition(obj, room.polygon);
+    const { x, y } = clampObjectPosition(obj, roomCollisionPolygon(room));
     return x === obj.x && y === obj.y ? obj : { ...obj, x, y };
   });
 }
@@ -120,7 +120,7 @@ function spawnPosition(state: State, footprint: Footprint): {
     y: (bounds.minY + bounds.maxY) / 2 + offset,
   };
   const probe = { id: "spawn-probe", ...footprint, ...candidate } as SceneObject;
-  return clampObjectPosition(probe, state.room.polygon);
+  return clampObjectPosition(probe, roomCollisionPolygon(state.room));
 }
 
 /**
@@ -226,7 +226,7 @@ function reducer(state: State, action: Action): State {
       if (state.selectedIds.length === 0) return state;
       const selected = new Set(state.selectedIds);
       const selectedObjects = state.objects.filter((obj) => selected.has(obj.id));
-      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, state.room.polygon);
+      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, roomCollisionPolygon(state.room));
       if (dx === 0 && dy === 0) return state;
       return {
         ...state,
@@ -344,7 +344,7 @@ function reducer(state: State, action: Action): State {
           // les nouvelles dimensions peuvent faire dépasser la table du
           // contour de la salle : on la ramène à l'intérieur, comme pour
           // n'importe quel autre déplacement
-          const { x, y } = clampObjectPosition(updated, state.room.polygon);
+          const { x, y } = clampObjectPosition(updated, roomCollisionPolygon(state.room));
           return { ...updated, x, y };
         }),
       };
@@ -390,7 +390,7 @@ function reducer(state: State, action: Action): State {
 
       const newObjects: SceneObject[] = clip.objects.map((o) => {
         const candidate = { ...o, id: crypto.randomUUID(), x: o.x + PASTE_OFFSET_CM, y: o.y + PASTE_OFFSET_CM };
-        const { x, y } = clampObjectPosition(candidate, state.room.polygon);
+        const { x, y } = clampObjectPosition(candidate, roomCollisionPolygon(state.room));
         return { ...candidate, x, y };
       });
       const newZones: ZoneObject[] = clip.zones.map((z) => ({

@@ -6,6 +6,7 @@ import type Konva from "konva";
 import type { Room } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
+import { roomCollisionPolygon } from "@/lib/planner/rooms";
 import { DimensionLabel } from "./dimension-label";
 
 type RoomProps = {
@@ -27,7 +28,9 @@ export function Room({ room, scale, origin }: RoomProps) {
   const widthPx = cmToPx(bounds.maxX - bounds.minX, scale);
   const heightPx = cmToPx(bounds.maxY - bounds.minY, scale);
   const pointsPx = room.polygon.map((p) => ({ x: cmToPx(p.x, scale), y: cmToPx(p.y, scale) }));
-  const flatPointsPx = pointsPx.flatMap((p) => [p.x, p.y]);
+  // contour arrondis compris (et non le polygone brut, qui passe par les
+  // points de contrôle des arrondis) : c'est lui qui porte l'ombre ci-dessous
+  const shadowPointsPx = roomCollisionPolygon(room).flatMap((p) => [cmToPx(p.x, scale), cmToPx(p.y, scale)]);
 
   // découpe la grille à la forme exacte du contour de la salle (arrondis compris)
   function clipToRoom(ctx: Konva.Context) {
@@ -69,7 +72,7 @@ export function Room({ room, scale, origin }: RoomProps) {
         ne fait plus que dessiner le contour (arrondi compris), sans ombre.
       */}
       <Line
-        points={flatPointsPx}
+        points={shadowPointsPx}
         closed
         fill="#F6F1E7"
         shadowColor="rgba(0,0,0,0.12)"

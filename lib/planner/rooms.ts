@@ -1,6 +1,6 @@
 // lib/planner/rooms.ts
-import type { DimensionLabel, Room } from "./types";
-import { polygonBounds, rectanglePolygon } from "./geometry";
+import type { DimensionLabel, Point, Room } from "./types";
+import { flattenCurvedPolygon, polygonBounds, rectanglePolygon } from "./geometry";
 
 /** nom affiché à l'utilisateur pour la salle "passerelle" (nom de code interne inchangé) */
 export const PASSERELLE_DISPLAY_NAME = "Rue intérieure Saint-Paul";
@@ -82,6 +82,23 @@ export function makeRectangleRoom(widthM: number, heightM: number): Room {
     widthM,
     heightM,
   };
+}
+
+const collisionPolygonCache = new WeakMap<Room, Point[]>();
+
+/**
+ * Contour à utiliser pour contenir tables et chaises : celui de la salle
+ * telle que dessinée, arrondis compris (le `polygon` brut, lui, passe par
+ * les points de contrôle des arrondis). Mis en cache par salle, car appelé
+ * en boucle pendant un drag.
+ */
+export function roomCollisionPolygon(room: Room): Point[] {
+  let poly = collisionPolygonCache.get(room);
+  if (!poly) {
+    poly = flattenCurvedPolygon(room.polygon, room.curvedVertices);
+    collisionPolygonCache.set(room, poly);
+  }
+  return poly;
 }
 
 /** vérifie qu'un objet chargé depuis le stockage a bien la forme d'une salle valide */

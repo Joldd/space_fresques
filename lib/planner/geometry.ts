@@ -95,6 +95,55 @@ export function tracePolygonPath(
   ctx.closePath();
 }
 
+/**
+ * Version "à plat" du contour tel que dessiné par tracePolygonPath : chaque
+ * arrondi (sommet de `curvedIndices`) est remplacé par `segments` points
+ * échantillonnés sur la courbe quadratique. Sert à contenir les meubles le
+ * long de l'arrondi visible plutôt que le long des deux segments droits qui
+ * rejoignent son point de contrôle.
+ */
+export function flattenCurvedPolygon(
+  points: Point[],
+  curvedIndices?: Iterable<number>,
+  segments = 24,
+): Polygon {
+  const curved = new Set(curvedIndices);
+  const n = points.length;
+  if (n === 0 || curved.size === 0) return points;
+
+  // même parcours que tracePolygonPath : un sommet arrondi consomme aussi
+  // son voisin suivant, qui devient l'extrémité de la courbe
+  const out: Point[] = [points[0]];
+  let i = 1;
+  while (i <= n) {
+    const idx = i % n;
+    if (curved.has(idx)) {
+      const start = out[out.length - 1];
+      const control = points[idx];
+      const end = points[(idx + 1) % n];
+      for (let k = 1; k <= segments; k++) {
+        const t = k / segments;
+        const a = (1 - t) * (1 - t);
+        const b = 2 * (1 - t) * t;
+        const c = t * t;
+        out.push({
+          x: a * start.x + b * control.x + c * end.x,
+          y: a * start.y + b * control.y + c * end.y,
+        });
+      }
+      i += 2;
+    } else {
+      out.push(points[idx]);
+      i += 1;
+    }
+  }
+
+  // le parcours se termine en revenant sur le premier point : doublon inutile
+  const last = out[out.length - 1];
+  if (out.length > 1 && last.x === out[0].x && last.y === out[0].y) out.pop();
+  return out;
+}
+
 export function rectanglePolygon(widthCm: number, heightCm: number): Polygon {
   return [
     { x: 0, y: 0 },
@@ -132,7 +181,15 @@ export function objectFootprintPoints(obj: SceneObject): Point[] {
 }
 
 export function isObjectInsidePolygon(obj: SceneObject, poly: Polygon): boolean {
-  return objectFootprintPoints(obj).every((pt) => pointInPolygon(pt, poly));
+  const footprint = objectFootprintPoints(obj);
+  // coins dans la salle ET aucun sommet du contour dans l'objet : sans ce
+  // second test, un mur rentrant (ex. un arrondi qui bombe vers l'intérieur)
+  // pourrait traverser le milieu d'un côté de table dont les coins, eux,
+  // restent à l'intérieur
+  return (
+    footprint.every((pt) => pointInPolygon(pt, poly)) &&
+    !poly.some((pt) => pointInPolygon(pt, footprint))
+  );
 }
 
 /**

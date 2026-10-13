@@ -17,7 +17,7 @@ import { usePlannerStore } from "@/lib/planner/use-planner-store";
 import { PADDING_PX, cmToPx, computeScale, pxToCm, roomOrigin } from "@/lib/planner/scale";
 import { polygonBounds } from "@/lib/planner/geometry";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
-import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
+import { PASSERELLE_DISPLAY_NAME, roomCollisionPolygon } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
 import type { RectArea, SceneObject, TableObject } from "@/lib/planner/types";
 
@@ -542,7 +542,7 @@ export function PlannerCanvas() {
                     table={obj}
                     scale={scale}
                     origin={origin}
-                    roomPolygon={room.polygon}
+                    roomPolygon={roomCollisionPolygon(room)}
                     selected={selectedIds.includes(obj.id)}
                     getDragGroup={getDragGroup}
                     onPointerDown={handleObjectPointerDown}
@@ -555,7 +555,7 @@ export function PlannerCanvas() {
                     chair={obj}
                     scale={scale}
                     origin={origin}
-                    roomPolygon={room.polygon}
+                    roomPolygon={roomCollisionPolygon(room)}
                     selected={selectedIds.includes(obj.id)}
                     getDragGroup={getDragGroup}
                     onPointerDown={handleObjectPointerDown}
