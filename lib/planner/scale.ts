@@ -3,9 +3,12 @@
 /** marge autour du plan, en pixels, pour laisser de l'air dans le canvas */
 export const PADDING_PX = 48;
 
+/** écart entre le bas du plan et la ligne des titres des salles, en pixels */
+export const ROOM_TITLE_GAP_PX = 16;
+
 /**
- * hauteur réservée sous les salles pour leur titre (et la cote du bas qui
- * peut s'intercaler entre le mur et le titre), en pixels
+ * hauteur réservée sous les salles pour leur titre (qui peut passer sur
+ * deux lignes quand la salle est étroite à l'écran), en pixels
  */
 export const ROOM_TITLE_SPACE_PX = 72;
 

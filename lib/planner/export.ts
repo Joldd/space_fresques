@@ -7,8 +7,7 @@ import { ROOM_TITLE_SPACE_PX, cmToPx } from "./scale";
 
 /** netteté de l'export : le plan est rendu à 2x sa résolution écran */
 const EXPORT_PIXEL_RATIO = 2;
-/** assez large pour inclure les cotes, décalées hors du contour des salles (voir DimensionLabel) */
-const CROP_MARGIN_PX = 52;
+const CROP_MARGIN_PX = 32;
 
 const LEGEND_PADDING_PX = 24;
 const LEGEND_TITLE_HEIGHT_PX = 30;

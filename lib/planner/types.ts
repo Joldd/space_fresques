@@ -9,10 +9,9 @@ export type Room = {
   name: string;
   /** contour de la salle, en cm, dans son propre repère (haut-gauche ≈ origine) */
   polygon: Point[];
-  /** largeur de la boîte englobante, en mètres (affichage) */
+  /** dimensions du plan client (longueur × largeur), en mètres, affichées après le nom */
+  lengthM: number;
   widthM: number;
-  /** hauteur de la boîte englobante, en mètres (affichage) */
-  heightM: number;
   /**
    * Indices (dans `polygon`) des sommets à dessiner comme un arrondi plutôt
    * qu'un angle vif : le sommet sert de point de contrôle d'une courbe
@@ -21,12 +20,6 @@ export type Room = {
    * tracé visuel est arrondi.
    */
   curvedVertices?: number[];
-  /**
-   * Cotes à afficher sur le plan : la salle étant un polygone quelconque et
-   * non un rectangle, une seule dimension "largeur × hauteur" ne suffit pas
-   * à la décrire — on annote plutôt certains segments du contour un par un.
-   */
-  dimensionLabels?: DimensionLabel[];
   /** éléments fixes de la salle (ex. escalier) sur lesquels on ne peut rien poser */
   obstacles?: RoomObstacle[];
   /** cloisons (ex. cloison mobile) dessinées sur le plan, sans bloquer les meubles */
@@ -48,16 +41,6 @@ export type RoomObstacle = {
   y: number;
   widthCm: number;
   heightCm: number;
-};
-
-export type DimensionLabelSide = "top" | "bottom" | "left" | "right";
-
-export type DimensionLabel = {
-  /** indices (dans `polygon`) des deux sommets dont la distance est cotée */
-  fromIndex: number;
-  toIndex: number;
-  /** côté du segment vers lequel décaler la cote, hors du polygone */
-  side: DimensionLabelSide;
 };
 
 export type Rotation = 0 | 90 | 180 | 270;

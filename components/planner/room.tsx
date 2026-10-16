@@ -6,15 +6,16 @@ import type Konva from "konva";
 import type { Room } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
-import { roomFloorArea } from "@/lib/planner/rooms";
+import { ROOM_GAP_CM, roomFloorArea } from "@/lib/planner/rooms";
 import { fitFontSize } from "@/lib/planner/fit-text";
-import { DimensionLabel } from "./dimension-label";
 
 type RoomProps = {
   room: Room;
   scale: number;
   /** origine du repère de la salle dans le Stage, en px */
   origin: { x: number; y: number };
+  /** haut du titre, en px, relatif à `origin` (commun à toutes les salles, pour les aligner) */
+  titleY: number;
 };
 
 const GRID_STEP_CM = 100; // une ligne de repère par mètre
@@ -27,18 +28,18 @@ const PARTITION_LABEL_GAP_PX = 6;
 const PARTITION_LABEL_BOX_WIDTH_PX = 160;
 
 const TITLE_FONT_SIZE_PX = 20;
-const TITLE_MIN_BOX_WIDTH_PX = 360;
-/** écart entre le bas de la salle et son titre, selon qu'une cote s'intercale ou non */
-const TITLE_GAP_PX = 16;
-const TITLE_GAP_BELOW_DIMENSION_PX = 48;
+/** part de l'écart entre deux salles que le titre peut occuper de chaque côté de la sienne */
+const TITLE_GAP_SHARE = 0.45;
 
-/** 850 -> "8.5 m", 1200 -> "12 m", 1425 -> "14.25 m" */
-function formatMeters(cm: number): string {
-  const meters = (cm / 100).toFixed(2).replace(/\.?0+$/, "");
-  return `${meters} m`;
+/** espace insécable : Konva ne revient à la ligne que sur les espaces normales */
+const NBSP = " ";
+
+/** 65.5 -> "65,5 m", 14 -> "14 m", 14.25 -> "14,25 m" */
+function formatMeters(m: number): string {
+  return `${m.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}${NBSP}m`;
 }
 
-export function Room({ room, scale, origin }: RoomProps) {
+export function Room({ room, scale, origin, titleY }: RoomProps) {
   const bounds = polygonBounds(room.polygon);
   const widthPx = cmToPx(bounds.maxX - bounds.minX, scale);
   const heightPx = cmToPx(bounds.maxY - bounds.minY, scale);
@@ -57,12 +58,10 @@ export function Room({ room, scale, origin }: RoomProps) {
     ctx.fillStrokeShape(shape);
   }
 
-  // une cote en bas de la salle (ou la cote "largeur × hauteur" par défaut)
-  // occupe déjà l'espace juste sous le mur : le titre se place alors dessous
-  const hasBottomAnnotation =
-    !room.dimensionLabels?.length || room.dimensionLabels.some(({ side }) => side === "bottom");
-  const titleY = heightPx + (hasBottomAnnotation ? TITLE_GAP_BELOW_DIMENSION_PX : TITLE_GAP_PX);
-  const titleBoxWidthPx = Math.max(widthPx, TITLE_MIN_BOX_WIDTH_PX);
+  // le titre déborde de la largeur de sa salle jusqu'à près de la moitié de
+  // l'écart avec la voisine (sans jamais chevaucher son titre), puis passe
+  // sur deux lignes : les titres sont sur une même ligne, côte à côte
+  const titleBoxWidthPx = widthPx + 2 * TITLE_GAP_SHARE * cmToPx(ROOM_GAP_CM, scale);
 
   const verticalLines = [];
   for (let cm = Math.ceil(bounds.minX / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxX; cm += GRID_STEP_CM) {
@@ -113,11 +112,6 @@ export function Room({ room, scale, origin }: RoomProps) {
         {horizontalLines}
       </Group>
       {/*
-        obstacles fixes (escalier...) : purement décoratifs côté événements
-        (listening={false}) — un clic dessus agit comme un clic sur le fond
-        de salle ; c'est roomFloorArea qui empêche d'y poser des meubles
-      */}
-      {/*
         cloisons (cloison mobile...) : simple repère visuel en pointillés,
         sans effet sur la pose des meubles — une cloison mobile peut être
         ouverte le jour de l'événement
@@ -150,6 +144,11 @@ export function Room({ room, scale, origin }: RoomProps) {
           </Group>
         );
       })}
+      {/*
+        obstacles fixes (escalier...) : purement décoratifs côté événements
+        (listening={false}) — un clic dessus agit comme un clic sur le fond
+        de salle ; c'est roomFloorArea qui empêche d'y poser des meubles
+      */}
       {(room.obstacles ?? []).map((obstacle) => {
         const x = cmToPx(obstacle.x, scale);
         const y = cmToPx(obstacle.y, scale);
@@ -180,48 +179,20 @@ export function Room({ room, scale, origin }: RoomProps) {
           </Group>
         );
       })}
-      {room.dimensionLabels && room.dimensionLabels.length > 0 ? (
-        // la salle est un polygone quelconque : une seule cote "largeur ×
-        // hauteur" de la boîte englobante n'aurait pas de sens, on cote donc
-        // individuellement les segments droits pertinents du contour
-        room.dimensionLabels.map(({ fromIndex, toIndex, side }) => {
-          const fromCm = room.polygon[fromIndex];
-          const toCm = room.polygon[toIndex];
-          if (!fromCm || !toCm) return null;
-          const distanceCm = Math.hypot(toCm.x - fromCm.x, toCm.y - fromCm.y);
-          return (
-            <DimensionLabel
-              key={`${fromIndex}-${toIndex}`}
-              from={pointsPx[fromIndex]}
-              to={pointsPx[toIndex]}
-              side={side}
-              label={formatMeters(distanceCm)}
-            />
-          );
-        })
-      ) : (
-        <Text
-          x={8}
-          y={heightPx + 8}
-          text={`${room.widthM} m × ${room.heightM} m`}
-          fontSize={13}
-          fill="#8A7A5C"
-        />
-      )}
       {/*
-        nom de la salle, en titre sous le plan : centré sous la salle dans une
-        boîte au moins aussi large que TITLE_MIN_BOX_WIDTH_PX — Konva coupe le
-        texte qui dépasse de sa boîte, et une salle étroite (ou un zoom
-        faible) la rendrait sinon trop petite pour le nom
+        nom de la salle et ses dimensions, en titre sous le plan — les
+        dimensions sont insécables : si le titre ne tient pas sur une ligne,
+        il se coupe entre le nom et la parenthèse, jamais au milieu de celle-ci
       */}
       <Text
         x={cmToPx(bounds.minX, scale) + widthPx / 2}
         y={titleY}
         width={titleBoxWidthPx}
         offsetX={titleBoxWidthPx / 2}
-        text={room.name}
+        text={`${room.name} (${formatMeters(room.lengthM)}${NBSP}×${NBSP}${formatMeters(room.widthM)})`}
         align="center"
-        wrap="none"
+        wrap="word"
+        lineHeight={1.2}
         fontSize={TITLE_FONT_SIZE_PX}
         fontFamily="Arial"
         fontStyle="bold"

@@ -16,7 +16,15 @@ import { TablePanel } from "./table-panel";
 import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
-import { PADDING_PX, ROOM_TITLE_SPACE_PX, cmToPx, computeScale, planOrigin, pxToCm } from "@/lib/planner/scale";
+import {
+  PADDING_PX,
+  ROOM_TITLE_GAP_PX,
+  ROOM_TITLE_SPACE_PX,
+  cmToPx,
+  computeScale,
+  planOrigin,
+  pxToCm,
+} from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import { DEFAULT_ROOM_ID, PLAN_ROOMS, getPlacedRoom, planBounds } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
@@ -591,9 +599,12 @@ export function PlannerCanvas() {
             onMouseUp={handleStageMouseUp}
           >
             <Layer>
-              {PLAN_ROOMS.map(({ room }) => (
-                <Room key={room.id} room={room} scale={scale} origin={roomOriginPx(room.id)} />
-              ))}
+              {PLAN_ROOMS.map(({ room }) => {
+                const roomOrigin = roomOriginPx(room.id);
+                // tous les titres sur une même ligne, sous le bas du plan entier
+                const titleY = origin.y + cmToPx(PLAN_BOUNDS.maxY, scale) + ROOM_TITLE_GAP_PX - roomOrigin.y;
+                return <Room key={room.id} room={room} scale={scale} origin={roomOrigin} titleY={titleY} />;
+              })}
               {zones.map((zone) => (
                 <Zone
                   key={zone.id}
