@@ -1,21 +1,26 @@
 // lib/planner/plan-file.ts
-// Format d'échange d'une configuration de plan (salle + tables/chaises +
-// zones) : utilisé pour l'export/import en fichier .json (partage) et pour
+// Format d'échange d'une configuration de plan (tables/chaises de chaque
+// salle + zones) : utilisé pour l'export/import en fichier .json (partage) et pour
 // les plans enregistrés dans le navigateur (voir saved-plans.ts).
 
-import type { ChairObject, Room, SceneObject, TableObject, ZoneObject } from "./types";
-import { PASSERELLE_ROOM, isValidRoom } from "./rooms";
+import type { ChairObject, SceneObject, TableObject, ZoneObject } from "./types";
+import { DEFAULT_ROOM_ID, isRoomId } from "./rooms";
 import { isValidZone } from "./zones";
 
+/**
+ * Les salles elles-mêmes (contours, obstacles...) ne font pas partie du
+ * plan : elles sont définies dans le code (voir PLAN_ROOMS), chaque table ou
+ * chaise indique seulement dans quelle salle elle est posée.
+ */
 export type PlanData = {
-  room: Room;
   objects: SceneObject[];
   zones: ZoneObject[];
 };
 
 /** marqueur permettant de reconnaître un fichier exporté par l'outil */
 const PLAN_FILE_APP = "space-fresques-planner";
-const PLAN_FILE_VERSION = 1;
+/** v1 : une seule salle (champ `room`), objets sans `roomId` ; v2 : plusieurs salles */
+const PLAN_FILE_VERSION = 2;
 
 type PlanFile = PlanData & {
   app: typeof PLAN_FILE_APP;
@@ -44,26 +49,40 @@ export function isValidSceneObject(value: unknown): value is SceneObject {
   if (!value || typeof value !== "object") return false;
   const obj = value as Partial<SceneObject>;
   if (typeof obj.id !== "string" || typeof obj.x !== "number" || typeof obj.y !== "number") return false;
+  if (!isRoomId(obj.roomId)) return false;
   if (obj.kind === "table") return isValidTable(obj);
   if (obj.kind === "chair") return isValidChair(obj);
   return false;
 }
 
 /**
+ * Objets enregistrés avant l'ajout d'une seconde salle (sans `roomId`), ou
+ * rattachés à une salle qui n'existe plus : on les replace dans la salle
+ * d'origine plutôt que de les perdre.
+ */
+function withDefaultRoomId(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (isRoomId((value as { roomId?: unknown }).roomId)) return value;
+  return { ...value, roomId: DEFAULT_ROOM_ID };
+}
+
+/**
  * Vérifie et nettoie des données de plan venant de l'extérieur (fichier
- * importé, stockage local). La salle "passerelle" est toujours remplacée par
- * sa définition actuelle dans le code : un plan enregistré avant une
- * retouche du contour profite ainsi du contour à jour. Les éléments mal
- * formés sont ignorés plutôt que de faire échouer tout le chargement.
+ * importé, stockage local). Les éléments mal formés sont ignorés plutôt que
+ * de faire échouer tout le chargement. Un plan enregistré avant l'ajout de
+ * la seconde salle (un champ `room` unique) est rattaché à la salle
+ * d'origine ; son ancien contour, lui, est ignoré au profit des salles
+ * définies dans le code.
  */
 export function sanitizePlanData(value: unknown): PlanData | null {
   if (!value || typeof value !== "object") return null;
-  const raw = value as { room?: unknown; objects?: unknown; zones?: unknown };
-  if (!isValidRoom(raw.room)) return null;
-  const room = raw.room.kind === "passerelle" ? PASSERELLE_ROOM : raw.room;
-  const objects = Array.isArray(raw.objects) ? raw.objects.filter(isValidSceneObject) : [];
+  const raw = value as { objects?: unknown; zones?: unknown };
+  if (!Array.isArray(raw.objects) && !Array.isArray(raw.zones)) return null;
+  const objects = Array.isArray(raw.objects)
+    ? raw.objects.map(withDefaultRoomId).filter(isValidSceneObject)
+    : [];
   const zones = Array.isArray(raw.zones) ? raw.zones.filter(isValidZone) : [];
-  return { room, objects, zones };
+  return { objects, zones };
 }
 
 export function serializePlanFile(plan: PlanData, name: string): string {
@@ -72,7 +91,6 @@ export function serializePlanFile(plan: PlanData, name: string): string {
     version: PLAN_FILE_VERSION,
     name,
     savedAt: new Date().toISOString(),
-    room: plan.room,
     objects: plan.objects,
     zones: plan.zones,
   };

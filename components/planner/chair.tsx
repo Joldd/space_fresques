@@ -5,14 +5,12 @@ import { Circle } from "react-konva";
 import type { ChairObject, SceneObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { useConstrainedDrag } from "@/lib/planner/use-constrained-drag";
-import type { FloorArea } from "@/lib/planner/geometry";
 import { setCanvasCursor } from "@/lib/planner/cursor";
 
 type ChairProps = {
   chair: ChairObject;
   scale: number;
   origin: { x: number; y: number };
-  roomArea: FloorArea;
   selected: boolean;
   getDragGroup: (id: string) => SceneObject[];
   onPointerDown: (id: string, additive: boolean) => void;
@@ -25,7 +23,6 @@ export function Chair({
   chair,
   scale,
   origin,
-  roomArea,
   selected,
   getDragGroup,
   onPointerDown,
@@ -39,7 +36,6 @@ export function Chair({
   const { handleMouseDown, handleDragStart, handleDragMove, dragBoundFunc } = useConstrainedDrag({
     id: chair.id,
     scale,
-    roomArea,
     getDragGroup,
     onPointerDown,
     onDragDelta,

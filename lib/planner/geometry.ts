@@ -144,15 +144,6 @@ export function flattenCurvedPolygon(
   return out;
 }
 
-export function rectanglePolygon(widthCm: number, heightCm: number): Polygon {
-  return [
-    { x: 0, y: 0 },
-    { x: widthCm, y: 0 },
-    { x: widthCm, y: heightCm },
-    { x: 0, y: heightCm },
-  ];
-}
-
 /** points d'encombrement au sol d'un objet, dans le repère de la salle (cm) */
 export function objectFootprintPoints(obj: SceneObject): Point[] {
   if (obj.kind === "chair") {
@@ -231,20 +222,21 @@ export function isObjectInsideArea(obj: SceneObject, area: FloorArea): boolean {
 
 /**
  * Réduit un déplacement de groupe (dx, dy) pour que tous les objets fournis
- * restent entièrement dans la surface utilisable — le groupe glisse et
+ * restent entièrement dans leur surface utilisable — le groupe glisse et
  * s'arrête au contact du mur (ou d'un obstacle) plutôt que d'être bloqué net.
  * Seule la position d'arrivée compte : un drag qui "saute" par-dessus un
- * obstacle vers une place libre est accepté.
+ * obstacle vers une place libre est accepté. `areaOf` donne la surface de
+ * chaque objet : un groupe peut mêler des objets de salles différentes.
  */
 export function clampGroupDelta(
   objects: SceneObject[],
   dxCm: number,
   dyCm: number,
-  area: FloorArea,
+  areaOf: (obj: SceneObject) => FloorArea,
 ): { dx: number; dy: number } {
   const validAt = (t: number) =>
     objects.every((obj) =>
-      isObjectInsideArea({ ...obj, x: obj.x + dxCm * t, y: obj.y + dyCm * t }, area),
+      isObjectInsideArea({ ...obj, x: obj.x + dxCm * t, y: obj.y + dyCm * t }, areaOf(obj)),
     );
 
   if (validAt(1)) return { dx: dxCm, dy: dyCm };

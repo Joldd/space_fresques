@@ -2,8 +2,8 @@
 "use client";
 
 import { useCallback, useEffect, useReducer } from "react";
-import type { ChairObject, Room, Rotation, SceneObject, TableObject, ZoneObject } from "./types";
-import { PASSERELLE_ROOM, makeRectangleRoom, roomFloorArea } from "./rooms";
+import type { ChairObject, Point, RoomId, Rotation, SceneObject, TableObject, ZoneObject } from "./types";
+import { getPlacedRoom, objectFloorArea } from "./rooms";
 import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry";
 import {
   DEFAULT_ZONE_HEIGHT_CM,
@@ -15,7 +15,6 @@ import { sanitizePlanData, type PlanData } from "./plan-file";
 
 const STORAGE_KEY = "space-fresques:planner";
 
-export const DEFAULT_ROOM: Room = PASSERELLE_ROOM;
 export const DEFAULT_TABLE = { widthCm: 200, depthCm: 300 };
 export const DEFAULT_CHAIR = { diameterCm: 80 };
 /** en dessous, une table devient trop petite pour être maniable */
@@ -26,7 +25,6 @@ const MAX_HISTORY = 50;
 const PASTE_OFFSET_CM = 30;
 
 type State = {
-  room: Room;
   objects: SceneObject[];
   zones: ZoneObject[];
   selectedIds: string[];
@@ -40,24 +38,24 @@ type State = {
   clipboard: ClipboardData | null;
 };
 
-type HistorySnapshot = { room: Room; objects: SceneObject[]; zones: ZoneObject[] };
+type HistorySnapshot = { objects: SceneObject[]; zones: ZoneObject[] };
 type ClipboardData = { objects: SceneObject[]; zones: ZoneObject[] };
 
 type ZonePatch = Partial<Omit<ZoneObject, "id" | "kind">>;
 
 type Action =
-  | { type: "LOAD"; room: Room; objects: SceneObject[]; zones: ZoneObject[] }
+  | { type: "LOAD"; objects: SceneObject[]; zones: ZoneObject[] }
   | { type: "MARK_HYDRATED" }
-  | { type: "SET_ROOM"; room: Room }
-  | { type: "ADD_TABLE"; widthCm: number; depthCm: number }
-  | { type: "ADD_CHAIR"; diameterCm: number }
+  | { type: "ADD_TABLE"; roomId: RoomId; widthCm: number; depthCm: number }
+  | { type: "ADD_CHAIR"; roomId: RoomId; diameterCm: number }
+  | { type: "MOVE_TABLE_TO_ROOM"; id: string; roomId: RoomId }
   | { type: "REMOVE_SELECTED" }
   | { type: "MOVE_SELECTED"; dxCm: number; dyCm: number }
   | { type: "ROTATE_SELECTED_TABLES" }
   | { type: "SELECT"; ids: string[]; additive: boolean }
   | { type: "SELECT_RECT"; ids: string[]; additive: boolean }
   | { type: "CLEAR_SELECTION" }
-  | { type: "ADD_ZONE" }
+  | { type: "ADD_ZONE"; center: Point }
   | { type: "UPDATE_ZONE"; id: string; patch: ZonePatch }
   | { type: "REMOVE_ZONE"; id: string }
   | { type: "REMOVE_SELECTED_ZONE" }
@@ -87,10 +85,10 @@ function mergeSelection(current: string[], ids: string[]): string[] {
   return Array.from(new Set([...current, ...ids]));
 }
 
-/** replace tous les objets à l'intérieur du polygone donné (best-effort, un par un) */
-function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
+/** replace chaque objet à l'intérieur de sa salle (best-effort, un par un) */
+function clampAllObjects(objects: SceneObject[]): SceneObject[] {
   return objects.map((obj) => {
-    const { x, y } = clampObjectPosition(obj, roomFloorArea(room));
+    const { x, y } = clampObjectPosition(obj, objectFloorArea(obj));
     return x === obj.x && y === obj.y ? obj : { ...obj, x, y };
   });
 }
@@ -101,41 +99,45 @@ function clampAllObjects(objects: SceneObject[], room: Room): SceneObject[] {
  * *avant* changement — jamais avec le nouvel état en cours de construction.
  */
 function withHistory(state: State): HistorySnapshot[] {
-  const next = [...state.past, { room: state.room, objects: state.objects, zones: state.zones }];
+  const next = [...state.past, { objects: state.objects, zones: state.zones }];
   return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
 }
 
 type Footprint = Omit<TableObject, "id" | "x" | "y"> | Omit<ChairObject, "id" | "x" | "y">;
 
-/** point de départ (centre de la boîte englobante) + décalage en cascade, ramené dans la salle */
+/**
+ * point de départ (centre de la boîte englobante de la salle) + décalage en
+ * cascade selon le nombre d'objets déjà dans cette salle, ramené dans la salle
+ */
 function spawnPosition(state: State, footprint: Footprint): {
   x: number;
   y: number;
 } {
   const step = 28; // cm
   const cascadeLength = 8;
-  const offset = (state.objects.length % cascadeLength) * step;
-  const bounds = polygonBounds(state.room.polygon);
+  const countInRoom = state.objects.filter((obj) => obj.roomId === footprint.roomId).length;
+  const offset = (countInRoom % cascadeLength) * step;
+  const bounds = polygonBounds(getPlacedRoom(footprint.roomId).room.polygon);
   const candidate = {
     x: (bounds.minX + bounds.maxX) / 2 + offset,
     y: (bounds.minY + bounds.maxY) / 2 + offset,
   };
   const probe = { id: "spawn-probe", ...footprint, ...candidate } as SceneObject;
-  return clampObjectPosition(probe, roomFloorArea(state.room));
+  return clampObjectPosition(probe, objectFloorArea(probe));
 }
 
 /**
- * point de départ d'une nouvelle zone (centrée sur la salle + cascade) — pas
- * de clamp ici, une zone peut librement dépasser du contour de la salle.
+ * point de départ d'une nouvelle zone (centrée sur `center` + cascade), dans
+ * le repère du plan — pas de clamp ici, une zone peut librement dépasser du
+ * contour des salles.
  */
-function spawnZonePosition(state: State): { x: number; y: number } {
+function spawnZonePosition(state: State, center: Point): { x: number; y: number } {
   const step = 24; // cm
   const cascadeLength = 8;
   const offset = (state.zones.length % cascadeLength) * step;
-  const bounds = polygonBounds(state.room.polygon);
   return {
-    x: (bounds.minX + bounds.maxX) / 2 - DEFAULT_ZONE_WIDTH_CM / 2 + offset,
-    y: (bounds.minY + bounds.maxY) / 2 - DEFAULT_ZONE_HEIGHT_CM / 2 + offset,
+    x: center.x - DEFAULT_ZONE_WIDTH_CM / 2 + offset,
+    y: center.y - DEFAULT_ZONE_HEIGHT_CM / 2 + offset,
   };
 }
 
@@ -144,8 +146,7 @@ function reducer(state: State, action: Action): State {
     case "LOAD":
       return {
         ...state,
-        room: action.room,
-        objects: clampAllObjects(action.objects, action.room),
+        objects: clampAllObjects(action.objects),
         zones: action.zones,
         selectedIds: [],
         selectedZoneId: null,
@@ -157,17 +158,10 @@ function reducer(state: State, action: Action): State {
     case "MARK_HYDRATED":
       return state.hydrated ? state : { ...state, hydrated: true };
 
-    case "SET_ROOM":
-      return {
-        ...state,
-        past: withHistory(state),
-        room: action.room,
-        objects: clampAllObjects(state.objects, action.room),
-      };
-
     case "ADD_TABLE": {
       const { x, y } = spawnPosition(state, {
         kind: "table",
+        roomId: action.roomId,
         widthCm: action.widthCm,
         depthCm: action.depthCm,
         rotation: 0,
@@ -175,6 +169,7 @@ function reducer(state: State, action: Action): State {
       const table: TableObject = {
         id: crypto.randomUUID(),
         kind: "table",
+        roomId: action.roomId,
         x,
         y,
         widthCm: action.widthCm,
@@ -194,11 +189,13 @@ function reducer(state: State, action: Action): State {
     case "ADD_CHAIR": {
       const { x, y } = spawnPosition(state, {
         kind: "chair",
+        roomId: action.roomId,
         diameterCm: action.diameterCm,
       });
       const chair: ChairObject = {
         id: crypto.randomUUID(),
         kind: "chair",
+        roomId: action.roomId,
         x,
         y,
         diameterCm: action.diameterCm,
@@ -209,6 +206,22 @@ function reducer(state: State, action: Action): State {
         objects: [...state.objects, chair],
         selectedIds: [chair.id],
         selectedZoneId: null,
+      };
+    }
+
+    // le drag ne permet pas de sortir une table de sa salle : on la change
+    // de salle explicitement (menu de la table), en la reposant au centre
+    // de la salle d'arrivée comme une table fraîchement ajoutée
+    case "MOVE_TABLE_TO_ROOM": {
+      const table = state.objects.find((obj) => obj.id === action.id);
+      if (!table || table.kind !== "table" || table.roomId === action.roomId) return state;
+      const { x, y } = spawnPosition(state, { ...table, roomId: action.roomId });
+      return {
+        ...state,
+        past: withHistory(state),
+        objects: state.objects.map((obj) =>
+          obj.id === action.id ? { ...table, roomId: action.roomId, x, y } : obj,
+        ),
       };
     }
 
@@ -227,7 +240,7 @@ function reducer(state: State, action: Action): State {
       if (state.selectedIds.length === 0) return state;
       const selected = new Set(state.selectedIds);
       const selectedObjects = state.objects.filter((obj) => selected.has(obj.id));
-      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, roomFloorArea(state.room));
+      const { dx, dy } = clampGroupDelta(selectedObjects, action.dxCm, action.dyCm, objectFloorArea);
       if (dx === 0 && dy === 0) return state;
       return {
         ...state,
@@ -274,7 +287,7 @@ function reducer(state: State, action: Action): State {
         : { ...state, selectedIds: [], selectedZoneId: null };
 
     case "ADD_ZONE": {
-      const { x, y } = spawnZonePosition(state);
+      const { x, y } = spawnZonePosition(state, action.center);
       const zone: ZoneObject = {
         id: crypto.randomUUID(),
         kind: "zone",
@@ -345,7 +358,7 @@ function reducer(state: State, action: Action): State {
           // les nouvelles dimensions peuvent faire dépasser la table du
           // contour de la salle : on la ramène à l'intérieur, comme pour
           // n'importe quel autre déplacement
-          const { x, y } = clampObjectPosition(updated, roomFloorArea(state.room));
+          const { x, y } = clampObjectPosition(updated, objectFloorArea(updated));
           return { ...updated, x, y };
         }),
       };
@@ -363,7 +376,6 @@ function reducer(state: State, action: Action): State {
       const previous = state.past[state.past.length - 1];
       return {
         ...state,
-        room: previous.room,
         objects: previous.objects,
         zones: previous.zones,
         past: state.past.slice(0, -1),
@@ -391,7 +403,7 @@ function reducer(state: State, action: Action): State {
 
       const newObjects: SceneObject[] = clip.objects.map((o) => {
         const candidate = { ...o, id: crypto.randomUUID(), x: o.x + PASTE_OFFSET_CM, y: o.y + PASTE_OFFSET_CM };
-        const { x, y } = clampObjectPosition(candidate, roomFloorArea(state.room));
+        const { x, y } = clampObjectPosition(candidate, objectFloorArea(candidate));
         return { ...candidate, x, y };
       });
       const newZones: ZoneObject[] = clip.zones.map((z) => ({
@@ -412,7 +424,7 @@ function reducer(state: State, action: Action): State {
     }
 
     case "RESET":
-      // repart de la salle et du plan par défaut ; l'effet de sauvegarde
+      // repart d'un plan vide ; l'effet de sauvegarde
       // écrase alors la sauvegarde locale avec cet état vierge. On garde un
       // filet de rattrapage : un Ctrl+Z juste après restaure tout le plan.
       return {
@@ -427,8 +439,7 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         past: withHistory(state),
-        room: action.plan.room,
-        objects: clampAllObjects(action.plan.objects, action.plan.room),
+        objects: clampAllObjects(action.plan.objects),
         zones: action.plan.zones,
         selectedIds: [],
         selectedZoneId: null,
@@ -441,7 +452,6 @@ function reducer(state: State, action: Action): State {
 
 function initialState(): State {
   return {
-    room: DEFAULT_ROOM,
     objects: [],
     zones: [],
     selectedIds: [],
@@ -462,8 +472,8 @@ export function usePlannerStore() {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        // même nettoyage qu'un fichier importé : la salle "passerelle" est
-        // remplacée par sa définition actuelle (contour, escalier...)
+        // même nettoyage qu'un fichier importé (dont la migration des plans
+        // enregistrés avant l'ajout de la seconde salle)
         const saved = sanitizePlanData(JSON.parse(raw));
         if (saved) dispatch({ type: "LOAD", ...saved });
         else dispatch({ type: "MARK_HYDRATED" });
@@ -482,32 +492,24 @@ export function usePlannerStore() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ room: state.room, objects: state.objects, zones: state.zones }),
+        JSON.stringify({ objects: state.objects, zones: state.zones }),
       );
     } catch {
       // quota dépassé ou stockage désactivé : on ignore
     }
-  }, [state.hydrated, state.room, state.objects, state.zones]);
+  }, [state.hydrated, state.objects, state.zones]);
 
-  const setRoom = useCallback(
-    (room: Room) => dispatch({ type: "SET_ROOM", room }),
-    [],
-  );
-  const setRectangleRoom = useCallback(
-    (widthM: number, heightM: number) => dispatch({ type: "SET_ROOM", room: makeRectangleRoom(widthM, heightM) }),
-    [],
-  );
-  const setPasserelleRoom = useCallback(
-    () => dispatch({ type: "SET_ROOM", room: PASSERELLE_ROOM }),
-    [],
-  );
   const addTable = useCallback(
-    (widthCm: number, depthCm: number) =>
-      dispatch({ type: "ADD_TABLE", widthCm, depthCm }),
+    (roomId: RoomId, widthCm: number, depthCm: number) =>
+      dispatch({ type: "ADD_TABLE", roomId, widthCm, depthCm }),
     [],
   );
   const addChair = useCallback(
-    (diameterCm: number) => dispatch({ type: "ADD_CHAIR", diameterCm }),
+    (roomId: RoomId, diameterCm: number) => dispatch({ type: "ADD_CHAIR", roomId, diameterCm }),
+    [],
+  );
+  const moveTableToRoom = useCallback(
+    (id: string, roomId: RoomId) => dispatch({ type: "MOVE_TABLE_TO_ROOM", id, roomId }),
     [],
   );
   const removeSelected = useCallback(
@@ -537,7 +539,7 @@ export function usePlannerStore() {
     () => dispatch({ type: "CLEAR_SELECTION" }),
     [],
   );
-  const addZone = useCallback(() => dispatch({ type: "ADD_ZONE" }), []);
+  const addZone = useCallback((center: Point) => dispatch({ type: "ADD_ZONE", center }), []);
   const updateZone = useCallback(
     (id: string, patch: ZonePatch) => dispatch({ type: "UPDATE_ZONE", id, patch }),
     [],
@@ -567,18 +569,15 @@ export function usePlannerStore() {
   const openPlan = useCallback((plan: PlanData) => dispatch({ type: "OPEN_PLAN", plan }), []);
 
   return {
-    room: state.room,
     objects: state.objects,
     zones: state.zones,
     selectedIds: state.selectedIds,
     selectedZoneId: state.selectedZoneId,
     canUndo: state.past.length > 0,
     canPaste: state.clipboard !== null,
-    setRoom,
-    setRectangleRoom,
-    setPasserelleRoom,
     addTable,
     addChair,
+    moveTableToRoom,
     removeSelected,
     moveSelected,
     rotateSelectedTables,

@@ -2,18 +2,19 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import type { Room } from "@/lib/planner/types";
+import type { RoomId } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
-import { PASSERELLE_DISPLAY_NAME } from "@/lib/planner/rooms";
+import { PLAN_ROOMS } from "@/lib/planner/rooms";
 import type { PlanData } from "@/lib/planner/plan-file";
 import { PlanLibrary } from "./plan-library";
 
 type PlannerSideBarProps = {
-  room: Room;
-  onSetRectangleRoom: (widthM: number, heightM: number) => void;
-  onSetPasserelleRoom: () => void;
-  onAddTable: (widthCm: number, depthCm: number) => void;
-  onAddChair: (diameterCm: number) => void;
+  /** salle dans laquelle les nouvelles tables sont ajoutées */
+  activeRoomId: RoomId;
+  onActiveRoomChange: (roomId: RoomId) => void;
+  onAddTable: (roomId: RoomId, widthCm: number, depthCm: number) => void;
+  onAddChair: (roomId: RoomId, diameterCm: number) => void;
+  /** les zones ne dépendent d'aucune salle : pas de choix de salle, l'appelant décide où la poser */
   onAddZone: () => void;
   selectedCount: number;
   hasSelectedTable: boolean;
@@ -87,13 +88,41 @@ function NumberField({
   );
 }
 
-const DEFAULT_CUSTOM_WIDTH_M = 8;
-const DEFAULT_CUSTOM_HEIGHT_M = 5;
+/** choix de la salle de destination d'un ajout (une pastille par salle) */
+function RoomPicker({
+  value,
+  onChange,
+}: {
+  value: RoomId;
+  onChange: (roomId: RoomId) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-sm text-[#4A4636] dark:text-[#D8D2BE]">
+      <span>Dans la salle</span>
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/5 dark:bg-white/10 p-1">
+        {PLAN_ROOMS.map(({ room }) => (
+          <button
+            key={room.id}
+            type="button"
+            onClick={() => onChange(room.id)}
+            aria-pressed={room.id === value}
+            className={`rounded-lg px-2 py-1.5 text-xs font-medium leading-tight transition-colors ${
+              room.id === value
+                ? "bg-[#3F5A45] text-white shadow-sm"
+                : "text-[#4A4636] dark:text-[#D8D2BE] hover:bg-black/5 dark:hover:bg-white/10"
+            }`}
+          >
+            {room.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function PlannerSideBar({
-  room,
-  onSetRectangleRoom,
-  onSetPasserelleRoom,
+  activeRoomId,
+  onActiveRoomChange,
   onAddTable,
   onAddChair,
   onAddZone,
@@ -109,29 +138,18 @@ export function PlannerSideBar({
   open,
   onClose,
 }: PlannerSideBarProps) {
-  const [widthM, setWidthM] = useState(
-    room.kind === "rectangle" ? room.widthM : DEFAULT_CUSTOM_WIDTH_M,
-  );
-  const [heightM, setHeightM] = useState(
-    room.kind === "rectangle" ? room.heightM : DEFAULT_CUSTOM_HEIGHT_M,
-  );
   const [tableWidth, setTableWidth] = useState(DEFAULT_TABLE.widthCm);
   const [tableDepth, setTableDepth] = useState(DEFAULT_TABLE.depthCm);
   const [chairDiameter, setChairDiameter] = useState(DEFAULT_CHAIR.diameterCm);
 
-  function applyRoom(e: FormEvent) {
-    e.preventDefault();
-    onSetRectangleRoom(Math.max(widthM, 1), Math.max(heightM, 1));
-  }
-
   function submitTable(e: FormEvent) {
     e.preventDefault();
-    onAddTable(Math.max(tableWidth, 10), Math.max(tableDepth, 10));
+    onAddTable(activeRoomId, Math.max(tableWidth, 10), Math.max(tableDepth, 10));
   }
 
   function submitChair(e: FormEvent) {
     e.preventDefault();
-    onAddChair(Math.max(chairDiameter, 10));
+    onAddChair(activeRoomId, Math.max(chairDiameter, 10));
   }
 
   return (
@@ -150,14 +168,9 @@ export function PlannerSideBar({
         } md:static md:inset-y-auto md:top-auto md:z-auto md:h-full md:w-85 md:translate-x-0 md:shadow-none md:bg-[#F6F1E7]/80`}
       >
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <h1 className="text-lg font-semibold text-[#3F5A45] dark:text-[#B9D3BC]">
-              🌿 Plan de salle
-            </h1>
-            <p className="text-xs text-[#8A8368] dark:text-[#8FA090] mt-1">
-              Installe ta salle à ton rythme : dimensions, tables, chaises.
-            </p>
-          </div>
+          <h1 className="text-lg font-semibold text-[#3F5A45] dark:text-[#B9D3BC]">
+            🌿 Plan de salle
+          </h1>
           <button
             type="button"
             onClick={onClose}
@@ -168,62 +181,9 @@ export function PlannerSideBar({
           </button>
         </div>
 
-        <Card title="Forme de la salle">
-          {/*
-          Le mode "Rectangle" existe toujours côté code (onSetRectangleRoom,
-          formulaire ci-dessous) mais reste caché pour l'instant : seule la
-          salle Rue intérieure Saint-Paul est utilisée. À réactiver le jour
-          où un autre lieu sera géré par l'outil.
-        */}
-          {room.kind === "passerelle" ? (
-            <>
-              <p className="mb-3 rounded-xl bg-[#3F5A45] px-3 py-2 text-sm font-medium text-white">
-                🌉 {PASSERELLE_DISPLAY_NAME}
-              </p>
-              <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE]">
-                Le plan réel de la salle {PASSERELLE_DISPLAY_NAME} :{" "}
-                {room.widthM} m × {room.heightM} m.
-              </p>
-            </>
-          ) : (
-            <form onSubmit={applyRoom} className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <NumberField
-                  label="Largeur"
-                  value={widthM}
-                  onChange={setWidthM}
-                  min={1}
-                  step={0.5}
-                  suffix="m"
-                />
-                <NumberField
-                  label="Profondeur"
-                  value={heightM}
-                  onChange={setHeightM}
-                  min={1}
-                  step={0.5}
-                  suffix="m"
-                />
-              </div>
-              <button
-                type="submit"
-                className="rounded-xl bg-[#3F5A45] text-white text-sm font-medium py-2 hover:bg-[#33492b] transition-colors"
-              >
-                Mettre à jour la salle
-              </button>
-              <button
-                type="button"
-                onClick={onSetPasserelleRoom}
-                className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
-              >
-                🌉 Revenir à {PASSERELLE_DISPLAY_NAME}
-              </button>
-            </form>
-          )}
-        </Card>
-
         <Card title="Ajouter une table">
           <form onSubmit={submitTable} className="flex flex-col gap-3">
+            <RoomPicker value={activeRoomId} onChange={onActiveRoomChange} />
             <div className="grid grid-cols-2 gap-2">
               <NumberField
                 label="Largeur"
@@ -265,7 +225,7 @@ export function PlannerSideBar({
 
         <Card title="Exporter le plan">
           <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
-            La salle, les tables et les zones, avec leur légende.
+            Les salles, les tables et les zones, avec leur légende.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -338,7 +298,10 @@ export function PlannerSideBar({
             <li>Touche R pour pivoter, Suppr pour supprimer</li>
             <li>Ctrl/Cmd + C puis V pour copier-coller</li>
             <li>Ctrl/Cmd + Z pour annuler la dernière action</li>
-            <li>Impossible de sortir une table ou une chaise de la salle</li>
+            <li>
+              Impossible de sortir une table de sa salle en la glissant :
+              clique dessus puis « Passer dans… » pour la changer de salle
+            </li>
             <li>
               Les zones, elles, peuvent dépasser du contour et se redimensionner
               librement, clique dessus pour les régler

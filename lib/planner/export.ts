@@ -1,13 +1,14 @@
 // lib/planner/export.ts
 import type Konva from "konva";
 import { jsPDF } from "jspdf";
-import type { Room, ZoneObject } from "./types";
-import { polygonBounds } from "./geometry";
-import { cmToPx } from "./scale";
+import type { ZoneObject } from "./types";
+import { planBounds } from "./rooms";
+import { ROOM_TITLE_SPACE_PX, cmToPx } from "./scale";
 
 /** netteté de l'export : le plan est rendu à 2x sa résolution écran */
 const EXPORT_PIXEL_RATIO = 2;
-const CROP_MARGIN_PX = 32;
+/** assez large pour inclure les cotes, décalées hors du contour des salles (voir DimensionLabel) */
+const CROP_MARGIN_PX = 52;
 
 const LEGEND_PADDING_PX = 24;
 const LEGEND_TITLE_HEIGHT_PX = 30;
@@ -25,17 +26,17 @@ const HEADER_DATE_LINE_PX = 20;
 const HEADER_HEIGHT_PX = LEGEND_PADDING_PX + HEADER_TITLE_LINE_PX + HEADER_DATE_LINE_PX + LEGEND_PADDING_PX / 2;
 
 /**
- * Zone de recadrage (en px écran, repère du Stage) qui englobe la salle ET
- * toutes les zones — ces dernières pouvant dépasser du contour de la salle,
- * un export cadré uniquement sur la salle les couperait sinon.
+ * Zone de recadrage (en px écran, repère du Stage) qui englobe les salles
+ * (titres compris) ET toutes les zones — ces dernières pouvant dépasser du
+ * contour des salles, un export cadré uniquement sur les salles les
+ * couperait sinon.
  */
 function computeExportCropPx(
-  room: Room,
   zones: ZoneObject[],
   scale: number,
   origin: { x: number; y: number },
 ) {
-  const bounds = polygonBounds(room.polygon);
+  const bounds = planBounds();
   let minX = bounds.minX;
   let maxX = bounds.maxX;
   let minY = bounds.minY;
@@ -48,11 +49,16 @@ function computeExportCropPx(
     maxY = Math.max(maxY, zone.y + zone.heightCm);
   }
 
+  const top = origin.y + cmToPx(minY, scale);
+  const bottom = Math.max(
+    origin.y + cmToPx(maxY, scale),
+    origin.y + cmToPx(bounds.maxY, scale) + ROOM_TITLE_SPACE_PX,
+  );
   return {
     x: origin.x + cmToPx(minX, scale) - CROP_MARGIN_PX,
-    y: origin.y + cmToPx(minY, scale) - CROP_MARGIN_PX,
+    y: top - CROP_MARGIN_PX,
     width: cmToPx(maxX - minX, scale) + CROP_MARGIN_PX * 2,
-    height: cmToPx(maxY - minY, scale) + CROP_MARGIN_PX * 2,
+    height: bottom - top + CROP_MARGIN_PX * 2,
   };
 }
 
@@ -99,19 +105,18 @@ function buildLegendCanvas(zones: ZoneObject[], widthPx: number): HTMLCanvasElem
 }
 
 /**
- * Compose l'export final : le plan (salle, tables, zones — cadré pour
+ * Compose l'export final : le plan (salles, tables, zones — cadré pour
  * inclure les zones qui dépasseraient du contour) au-dessus de la légende
- * des zones.
+ * des zones. `origin` est l'origine du repère du plan dans le Stage.
  */
 export function buildExportCanvas(
   stage: Konva.Stage,
-  room: Room,
   zones: ZoneObject[],
   scale: number,
   origin: { x: number; y: number },
   title: string,
 ): HTMLCanvasElement {
-  const crop = computeExportCropPx(room, zones, scale, origin);
+  const crop = computeExportCropPx(zones, scale, origin);
   const planCanvas = stage.toCanvas({ ...crop, pixelRatio: EXPORT_PIXEL_RATIO });
 
   const legendCanvas = buildLegendCanvas(zones, planCanvas.width / EXPORT_PIXEL_RATIO);

@@ -1,9 +1,10 @@
 // lib/planner/rooms.ts
-import type { DimensionLabel, Room, RoomObstacle } from "./types";
-import { flattenCurvedPolygon, polygonBounds, rectanglePolygon, type FloorArea } from "./geometry";
+import type { DimensionLabel, Point, Room, RoomId, RoomObstacle, RoomPartition, SceneObject } from "./types";
+import { flattenCurvedPolygon, polygonBounds, type FloorArea } from "./geometry";
 
 /** nom affiché à l'utilisateur pour la salle "passerelle" (nom de code interne inchangé) */
 export const PASSERELLE_DISPLAY_NAME = "Rue intérieure Saint-Paul";
+export const VICAT_DISPLAY_NAME = "Salle Louis Vicat";
 
 /**
  * Contour approximatif de la salle "Passerelle" (plan fourni par le client),
@@ -62,7 +63,8 @@ function metersPolygonToCm(points: [number, number][]) {
 }
 
 function roomFromPolygonM(
-  kind: Room["kind"],
+  id: RoomId,
+  name: string,
   points: [number, number][],
   curvedVertices?: number[],
   dimensionLabels?: DimensionLabel[],
@@ -71,7 +73,8 @@ function roomFromPolygonM(
   const polygon = metersPolygonToCm(points);
   const bounds = polygonBounds(polygon);
   return {
-    kind,
+    id,
+    name,
     polygon,
     widthM: (bounds.maxX - bounds.minX) / 100,
     heightM: (bounds.maxY - bounds.minY) / 100,
@@ -83,18 +86,110 @@ function roomFromPolygonM(
 
 export const PASSERELLE_ROOM: Room = roomFromPolygonM(
   "passerelle",
+  PASSERELLE_DISPLAY_NAME,
   PASSERELLE_POINTS_M,
   PASSERELLE_CURVED_VERTICES,
   PASSERELLE_DIMENSION_LABELS,
   PASSERELLE_OBSTACLES,
 );
 
-export function makeRectangleRoom(widthM: number, heightM: number): Room {
+/**
+ * Salle Louis Vicat (plan fourni par le client), L: 15,5 m × l: 14,25 m.
+ * Seule la salle principale est modélisée : les annexes du croquis (office
+ * traiteur et local voisin à droite, vestiaire en bas, petits locaux à
+ * gauche de part et d'autre des entrées) sont des pièces fermées où l'on ne
+ * pose pas de tables. Les deux dimensions principales sont fidèles au plan ;
+ * le petit renfoncement en bas à gauche (~4,85 m × 0,85 m) est estimé à
+ * partir des proportions du croquis.
+ */
+const VICAT_POINTS_M: [number, number][] = [
+  [0, 0],
+  [15.5, 0],
+  [15.5, 14.25],
+  [4.85, 14.25],
+  [4.85, 15.1],
+  [0, 15.1],
+];
+
+const VICAT_DIMENSION_LABELS: DimensionLabel[] = [
+  { fromIndex: 0, toIndex: 1, side: "top" }, // largeur : 15,5 m
+  { fromIndex: 1, toIndex: 2, side: "right" }, // profondeur : 14,25 m
+];
+
+/**
+ * Bloc au mur gauche, entre les deux entrées (rectangle du croquis, sans
+ * légende) : ~1 m × 2,45 m, position estimée sur le croquis.
+ */
+const VICAT_OBSTACLES: RoomObstacle[] = [{ label: "", x: 0, y: 565, widthCm: 100, heightCm: 245 }];
+
+/** cloison mobile qui peut couper la salle en deux, à ~6,95 m du mur du haut */
+const VICAT_PARTITIONS: RoomPartition[] = [
+  { label: "Cloison mobile", from: { x: 100, y: 695 }, to: { x: 1550, y: 695 } },
+];
+
+export const VICAT_ROOM: Room = {
+  ...roomFromPolygonM(
+    "vicat",
+    VICAT_DISPLAY_NAME,
+    VICAT_POINTS_M,
+    undefined,
+    VICAT_DIMENSION_LABELS,
+    VICAT_OBSTACLES,
+  ),
+  partitions: VICAT_PARTITIONS,
+};
+
+/** écart horizontal entre deux salles voisines sur le plan */
+const ROOM_GAP_CM = 600;
+
+export type PlacedRoom = {
+  room: Room;
+  /** position de l'origine du repère de la salle dans le repère du plan, en cm */
+  offset: Point;
+};
+
+/**
+ * Les salles affichées côte à côte, de gauche à droite, alignées en haut.
+ * La première reste à l'origine du plan : le repère du plan coïncide ainsi
+ * avec celui de la salle Rue intérieure Saint-Paul (compatibilité des zones
+ * enregistrées avant l'ajout de la seconde salle).
+ */
+export const PLAN_ROOMS: PlacedRoom[] = (() => {
+  const placed: PlacedRoom[] = [];
+  let nextX = 0;
+  for (const room of [PASSERELLE_ROOM, VICAT_ROOM]) {
+    const bounds = polygonBounds(room.polygon);
+    placed.push({ room, offset: { x: nextX - bounds.minX, y: -bounds.minY } });
+    nextX += bounds.maxX - bounds.minX + ROOM_GAP_CM;
+  }
+  return placed;
+})();
+
+export const DEFAULT_ROOM_ID: RoomId = "passerelle";
+
+export function isRoomId(value: unknown): value is RoomId {
+  return PLAN_ROOMS.some(({ room }) => room.id === value);
+}
+
+export function getPlacedRoom(id: RoomId): PlacedRoom {
+  return PLAN_ROOMS.find(({ room }) => room.id === id) ?? PLAN_ROOMS[0];
+}
+
+export function getRoom(id: RoomId): Room {
+  return getPlacedRoom(id).room;
+}
+
+/** boîte englobante de toutes les salles, en cm, dans le repère du plan */
+export function planBounds() {
+  const boxes = PLAN_ROOMS.map(({ room, offset }) => {
+    const b = polygonBounds(room.polygon);
+    return { minX: b.minX + offset.x, maxX: b.maxX + offset.x, minY: b.minY + offset.y, maxY: b.maxY + offset.y };
+  });
   return {
-    kind: "rectangle",
-    polygon: rectanglePolygon(widthM * 100, heightM * 100),
-    widthM,
-    heightM,
+    minX: Math.min(...boxes.map((b) => b.minX)),
+    maxX: Math.max(...boxes.map((b) => b.maxX)),
+    minY: Math.min(...boxes.map((b) => b.minY)),
+    maxY: Math.max(...boxes.map((b) => b.maxY)),
   };
 }
 
@@ -123,15 +218,7 @@ export function roomFloorArea(room: Room): FloorArea {
   return area;
 }
 
-/** vérifie qu'un objet chargé depuis le stockage a bien la forme d'une salle valide */
-export function isValidRoom(value: unknown): value is Room {
-  if (!value || typeof value !== "object") return false;
-  const room = value as Partial<Room>;
-  return (
-    (room.kind === "rectangle" || room.kind === "passerelle") &&
-    Array.isArray(room.polygon) &&
-    room.polygon.length >= 3 &&
-    typeof room.widthM === "number" &&
-    typeof room.heightM === "number"
-  );
+/** surface utilisable de la salle où est posé l'objet */
+export function objectFloorArea(obj: SceneObject): FloorArea {
+  return roomFloorArea(getRoom(obj.roomId));
 }

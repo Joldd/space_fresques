@@ -14,13 +14,17 @@ import { TablePanel } from "./table-panel";
 import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
 import { usePlannerStore } from "@/lib/planner/use-planner-store";
-import { PADDING_PX, cmToPx, computeScale, pxToCm, roomOrigin } from "@/lib/planner/scale";
-import { polygonBounds } from "@/lib/planner/geometry";
+import { PADDING_PX, ROOM_TITLE_SPACE_PX, cmToPx, computeScale, planOrigin, pxToCm } from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
-import { PASSERELLE_DISPLAY_NAME, roomFloorArea } from "@/lib/planner/rooms";
+import { DEFAULT_ROOM_ID, PLAN_ROOMS, getPlacedRoom, planBounds } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
-import { slugify } from "@/lib/planner/slugify";
-import type { RectArea, SceneObject, TableObject } from "@/lib/planner/types";
+import type { RectArea, RoomId, SceneObject, TableObject } from "@/lib/planner/types";
+
+/** les salles sont fixes : leur boîte englobante commune (en cm, repère du plan) aussi */
+const PLAN_BOUNDS = planBounds();
+
+const EXPORT_TITLE = "Plan de salle";
+const EXPORT_FILENAME_BASE = "plan-de-salle";
 
 /** zoom manuel (Ctrl + molette) : 1 = vue ajustée à l'écran (comportement d'origine), jamais moins */
 const ZOOM_MIN = 1;
@@ -109,15 +113,13 @@ function computeStageSize() {
 export function PlannerCanvas() {
   const store = usePlannerStore();
   const {
-    room,
     objects,
     zones,
     selectedIds,
     selectedZoneId,
-    setRectangleRoom,
-    setPasserelleRoom,
     addTable,
     addChair,
+    moveTableToRoom,
     removeSelected,
     moveSelected,
     rotateSelectedTables,
@@ -144,6 +146,7 @@ export function PlannerCanvas() {
   // SIDEBAR_WIDTH_PX
   const [stageSize, setStageSize] = useState(() => computeStageSize());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeRoomId, setActiveRoomId] = useState<RoomId>(DEFAULT_ROOM_ID);
   const stageRef = useRef<Konva.Stage>(null);
 
   useEffect(() => {
@@ -165,17 +168,25 @@ export function PlannerCanvas() {
   const pendingZoomAnchorRef = useRef<{
     clientX: number;
     clientY: number;
-    roomCm: { x: number; y: number };
+    planCm: { x: number; y: number };
   } | null>(null);
 
-  const fitScale = computeScale(room, stageSize);
+  const fitScale = computeScale(PLAN_BOUNDS, stageSize);
   const scale = fitScale * zoomLevel;
-  const roomBoundsCm = polygonBounds(room.polygon);
-  const roomWidthPx = (roomBoundsCm.maxX - roomBoundsCm.minX) * scale;
-  const roomHeightPx = (roomBoundsCm.maxY - roomBoundsCm.minY) * scale;
-  const contentWidth = Math.max(stageSize.width, roomWidthPx + PADDING_PX * 2);
-  const contentHeight = Math.max(stageSize.height, roomHeightPx + PADDING_PX * 2);
-  const origin = roomOrigin(room, { width: contentWidth, height: contentHeight }, scale);
+  const planWidthPx = (PLAN_BOUNDS.maxX - PLAN_BOUNDS.minX) * scale;
+  const planHeightPx = (PLAN_BOUNDS.maxY - PLAN_BOUNDS.minY) * scale + ROOM_TITLE_SPACE_PX;
+  const contentWidth = Math.max(stageSize.width, planWidthPx + PADDING_PX * 2);
+  const contentHeight = Math.max(stageSize.height, planHeightPx + PADDING_PX * 2);
+  // origine du repère du plan (celui des zones) ; chaque salle a la sienne,
+  // décalée de sa position sur le plan (celle des tables et chaises)
+  const origin = planOrigin(PLAN_BOUNDS, { width: contentWidth, height: contentHeight }, scale);
+  const roomOriginPx = useCallback(
+    (roomId: RoomId) => {
+      const { offset } = getPlacedRoom(roomId);
+      return { x: origin.x + cmToPx(offset.x, scale), y: origin.y + cmToPx(offset.y, scale) };
+    },
+    [origin.x, origin.y, scale],
+  );
 
   // applique un facteur de zoom en gardant le point (clientX, clientY) fixe à
   // l'écran — utilisé aussi bien par Ctrl+molette (point sous le curseur)
@@ -187,13 +198,13 @@ export function PlannerCanvas() {
       const rect = container.getBoundingClientRect();
       const contentX = clientX - rect.left + container.scrollLeft;
       const contentY = clientY - rect.top + container.scrollTop;
-      const roomCm = {
+      const planCm = {
         x: pxToCm(contentX - origin.x, scale),
         y: pxToCm(contentY - origin.y, scale),
       };
       setZoomLevel((z) => {
         const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor));
-        if (next !== z) pendingZoomAnchorRef.current = { clientX, clientY, roomCm };
+        if (next !== z) pendingZoomAnchorRef.current = { clientX, clientY, planCm };
         return next;
       });
     },
@@ -240,8 +251,8 @@ export function PlannerCanvas() {
     pendingZoomAnchorRef.current = null;
 
     const rect = container.getBoundingClientRect();
-    const newContentX = origin.x + cmToPx(anchor.roomCm.x, scale);
-    const newContentY = origin.y + cmToPx(anchor.roomCm.y, scale);
+    const newContentX = origin.x + cmToPx(anchor.planCm.x, scale);
+    const newContentY = origin.y + cmToPx(anchor.planCm.y, scale);
     container.scrollLeft = newContentX - (anchor.clientX - rect.left);
     container.scrollTop = newContentY - (anchor.clientY - rect.top);
   }, [scale, origin]);
@@ -295,14 +306,14 @@ export function PlannerCanvas() {
       const hasArea = area.width > 2 || area.height > 2;
       if (hasArea) {
         const ids = objects
-          .filter((obj) => rectsIntersect(area, getObjectBoundsPx(obj, scale, origin)))
+          .filter((obj) => rectsIntersect(area, getObjectBoundsPx(obj, scale, roomOriginPx(obj.roomId))))
           .map((obj) => obj.id);
         selectRect(ids, dragSelect.additive);
       } else if (!dragSelect.additive) {
         clearSelection();
       }
     },
-    [objects, scale, origin, selectRect, clearSelection],
+    [objects, scale, roomOriginPx, selectRect, clearSelection],
   );
 
   // snapshot de "qui doit bouger avec qui" pendant un drag, résolu de façon
@@ -410,32 +421,42 @@ export function PlannerCanvas() {
 
   let tablePanelPos: { x: number; y: number } | null = null;
   if (singleSelectedTable) {
-    const box = getObjectBoundsPx(singleSelectedTable, scale, origin);
+    const box = getObjectBoundsPx(singleSelectedTable, scale, roomOriginPx(singleSelectedTable.roomId));
     tablePanelPos = computePanelPosition(box.x, box.x + box.width, box.y, contentWidth);
   }
-
-  const roomLabel = room.kind === "passerelle" ? PASSERELLE_DISPLAY_NAME : "Plan de salle";
-  const exportFilenameBase = `plan-${slugify(roomLabel)}`;
 
   const handleExportJpeg = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const canvas = buildExportCanvas(stage, room, zones, scale, origin, roomLabel);
-    downloadCanvasAsJpeg(canvas, `${exportFilenameBase}.jpg`);
-  }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
+    const canvas = buildExportCanvas(stage, zones, scale, origin, EXPORT_TITLE);
+    downloadCanvasAsJpeg(canvas, `${EXPORT_FILENAME_BASE}.jpg`);
+  }, [zones, scale, origin]);
 
   const handleExportPdf = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const canvas = buildExportCanvas(stage, room, zones, scale, origin, roomLabel);
-    downloadCanvasAsPdf(canvas, `${exportFilenameBase}.pdf`);
-  }, [room, zones, scale, origin, roomLabel, exportFilenameBase]);
+    const canvas = buildExportCanvas(stage, zones, scale, origin, EXPORT_TITLE);
+    downloadCanvasAsPdf(canvas, `${EXPORT_FILENAME_BASE}.pdf`);
+  }, [zones, scale, origin]);
 
-  const currentPlan = useMemo(() => ({ room, objects, zones }), [room, objects, zones]);
+  // une zone n'appartient à aucune salle : on la pose au centre de la
+  // partie du plan actuellement visible (scroll et zoom compris)
+  const handleAddZone = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const centerPx = container
+      ? {
+          x: container.scrollLeft + container.clientWidth / 2,
+          y: container.scrollTop + container.clientHeight / 2,
+        }
+      : { x: contentWidth / 2, y: contentHeight / 2 };
+    addZone({ x: pxToCm(centerPx.x - origin.x, scale), y: pxToCm(centerPx.y - origin.y, scale) });
+  }, [addZone, contentWidth, contentHeight, origin, scale]);
+
+  const currentPlan = useMemo(() => ({ objects, zones }), [objects, zones]);
 
   const handleReset = useCallback(() => {
     const confirmed = window.confirm(
-      `Réinitialiser le plan ?\n\nLa salle repasse à ${PASSERELLE_DISPLAY_NAME}, et toutes les tables, chaises et zones actuelles sont supprimées. Ctrl+Z permet de revenir en arrière juste après.`,
+      "Réinitialiser le plan ?\n\nToutes les tables, chaises et zones des deux salles sont supprimées. Ctrl+Z permet de revenir en arrière juste après.",
     );
     if (confirmed) resetPlan();
   }, [resetPlan]);
@@ -443,12 +464,11 @@ export function PlannerCanvas() {
   return (
     <div className="flex h-[calc(100vh-56px)] bg-[#EFE7D6] dark:bg-[#1B1F1A]">
       <PlannerSideBar
-        room={room}
-        onSetRectangleRoom={setRectangleRoom}
-        onSetPasserelleRoom={setPasserelleRoom}
+        activeRoomId={activeRoomId}
+        onActiveRoomChange={setActiveRoomId}
         onAddTable={addTable}
         onAddChair={addChair}
-        onAddZone={addZone}
+        onAddZone={handleAddZone}
         selectedCount={selectedCount}
         hasSelectedTable={hasSelectedTable}
         hasContextPanel={!!singleSelectedTable}
@@ -516,7 +536,9 @@ export function PlannerCanvas() {
             onMouseUp={handleStageMouseUp}
           >
             <Layer>
-              <Room room={room} scale={scale} origin={origin} />
+              {PLAN_ROOMS.map(({ room }) => (
+                <Room key={room.id} room={room} scale={scale} origin={roomOriginPx(room.id)} />
+              ))}
               {zones.map((zone) => (
                 <Zone
                   key={zone.id}
@@ -535,8 +557,7 @@ export function PlannerCanvas() {
                     key={obj.id}
                     table={obj}
                     scale={scale}
-                    origin={origin}
-                    roomArea={roomFloorArea(room)}
+                    origin={roomOriginPx(obj.roomId)}
                     selected={selectedIds.includes(obj.id)}
                     getDragGroup={getDragGroup}
                     onPointerDown={handleObjectPointerDown}
@@ -548,8 +569,7 @@ export function PlannerCanvas() {
                     key={obj.id}
                     chair={obj}
                     scale={scale}
-                    origin={origin}
-                    roomArea={roomFloorArea(room)}
+                    origin={roomOriginPx(obj.roomId)}
                     selected={selectedIds.includes(obj.id)}
                     getDragGroup={getDragGroup}
                     onPointerDown={handleObjectPointerDown}
@@ -588,6 +608,8 @@ export function PlannerCanvas() {
               onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
               onRotate={rotateSelectedTables}
               onDelete={removeSelected}
+              otherRooms={PLAN_ROOMS.map(({ room }) => room).filter((room) => room.id !== singleSelectedTable.roomId)}
+              onMoveToRoom={(roomId) => moveTableToRoom(singleSelectedTable.id, roomId)}
               onClose={clearSelection}
               onBeginChange={pushHistory}
             />

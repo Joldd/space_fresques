@@ -13,6 +13,7 @@ import { DimensionLabel } from "./dimension-label";
 type RoomProps = {
   room: Room;
   scale: number;
+  /** origine du repère de la salle dans le Stage, en px */
   origin: { x: number; y: number };
 };
 
@@ -21,9 +22,19 @@ const GRID_STEP_CM = 100; // une ligne de repère par mètre
 const OBSTACLE_FONT = { fontFamily: "Arial", fontStyle: "600", lineHeight: 1.1, minFontSize: 6, maxFontSize: 14 };
 const OBSTACLE_PADDING_PX = 4;
 
-/** 850 -> "8.5 m", 1200 -> "12 m" */
+const PARTITION_COLOR = "#D4A93C";
+const PARTITION_LABEL_GAP_PX = 6;
+const PARTITION_LABEL_BOX_WIDTH_PX = 160;
+
+const TITLE_FONT_SIZE_PX = 20;
+const TITLE_MIN_BOX_WIDTH_PX = 360;
+/** écart entre le bas de la salle et son titre, selon qu'une cote s'intercale ou non */
+const TITLE_GAP_PX = 16;
+const TITLE_GAP_BELOW_DIMENSION_PX = 48;
+
+/** 850 -> "8.5 m", 1200 -> "12 m", 1425 -> "14.25 m" */
 function formatMeters(cm: number): string {
-  const meters = (cm / 100).toFixed(1).replace(/\.0$/, "");
+  const meters = (cm / 100).toFixed(2).replace(/\.?0+$/, "");
   return `${meters} m`;
 }
 
@@ -45,6 +56,13 @@ export function Room({ room, scale, origin }: RoomProps) {
     tracePolygonPath(ctx, pointsPx, room.curvedVertices);
     ctx.fillStrokeShape(shape);
   }
+
+  // une cote en bas de la salle (ou la cote "largeur × hauteur" par défaut)
+  // occupe déjà l'espace juste sous le mur : le titre se place alors dessous
+  const hasBottomAnnotation =
+    !room.dimensionLabels?.length || room.dimensionLabels.some(({ side }) => side === "bottom");
+  const titleY = heightPx + (hasBottomAnnotation ? TITLE_GAP_BELOW_DIMENSION_PX : TITLE_GAP_PX);
+  const titleBoxWidthPx = Math.max(widthPx, TITLE_MIN_BOX_WIDTH_PX);
 
   const verticalLines = [];
   for (let cm = Math.ceil(bounds.minX / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxX; cm += GRID_STEP_CM) {
@@ -99,6 +117,39 @@ export function Room({ room, scale, origin }: RoomProps) {
         (listening={false}) — un clic dessus agit comme un clic sur le fond
         de salle ; c'est roomFloorArea qui empêche d'y poser des meubles
       */}
+      {/*
+        cloisons (cloison mobile...) : simple repère visuel en pointillés,
+        sans effet sur la pose des meubles — une cloison mobile peut être
+        ouverte le jour de l'événement
+      */}
+      {(room.partitions ?? []).map(({ label, from, to }) => {
+        const fromPx = { x: cmToPx(from.x, scale), y: cmToPx(from.y, scale) };
+        const toPx = { x: cmToPx(to.x, scale), y: cmToPx(to.y, scale) };
+        const centerX = (fromPx.x + toPx.x) / 2;
+        const centerY = (fromPx.y + toPx.y) / 2;
+        return (
+          <Group key={`${label}-${from.x}-${from.y}`} listening={false}>
+            <Line
+              points={[fromPx.x, fromPx.y, toPx.x, toPx.y]}
+              stroke={PARTITION_COLOR}
+              strokeWidth={3}
+              dash={[6, 5]}
+            />
+            <Text
+              x={centerX}
+              y={centerY + PARTITION_LABEL_GAP_PX}
+              width={PARTITION_LABEL_BOX_WIDTH_PX}
+              offsetX={PARTITION_LABEL_BOX_WIDTH_PX / 2}
+              text={label}
+              align="center"
+              fontSize={12}
+              fontFamily="Arial"
+              fontStyle="600"
+              fill="#7A6A4C"
+            />
+          </Group>
+        );
+      })}
       {(room.obstacles ?? []).map((obstacle) => {
         const x = cmToPx(obstacle.x, scale);
         const y = cmToPx(obstacle.y, scale);
@@ -157,6 +208,28 @@ export function Room({ room, scale, origin }: RoomProps) {
           fill="#8A7A5C"
         />
       )}
+      {/*
+        nom de la salle, en titre sous le plan : centré sous la salle dans une
+        boîte au moins aussi large que TITLE_MIN_BOX_WIDTH_PX — Konva coupe le
+        texte qui dépasse de sa boîte, et une salle étroite (ou un zoom
+        faible) la rendrait sinon trop petite pour le nom
+      */}
+      <Text
+        x={cmToPx(bounds.minX, scale) + widthPx / 2}
+        y={titleY}
+        width={titleBoxWidthPx}
+        offsetX={titleBoxWidthPx / 2}
+        text={room.name}
+        align="center"
+        wrap="none"
+        fontSize={TITLE_FONT_SIZE_PX}
+        fontFamily="Arial"
+        fontStyle="bold"
+        // ton moyen : le canvas ne suit pas le thème, il doit rester lisible
+        // sur le fond clair comme sur le fond sombre (et sur l'export)
+        fill="#5E7F63"
+        listening={false}
+      />
     </Group>
   );
 }

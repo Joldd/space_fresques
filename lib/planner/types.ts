@@ -1,9 +1,12 @@
 // lib/planner/types.ts
 
-export type RoomShapeKind = "passerelle" | "rectangle";
+/** identifiant stable d'une salle du plan (sauvegardé avec chaque table/chaise) */
+export type RoomId = "passerelle" | "vicat";
 
 export type Room = {
-  kind: RoomShapeKind;
+  id: RoomId;
+  /** nom affiché en titre sous la salle */
+  name: string;
   /** contour de la salle, en cm, dans son propre repère (haut-gauche ≈ origine) */
   polygon: Point[];
   /** largeur de la boîte englobante, en mètres (affichage) */
@@ -26,6 +29,15 @@ export type Room = {
   dimensionLabels?: DimensionLabel[];
   /** éléments fixes de la salle (ex. escalier) sur lesquels on ne peut rien poser */
   obstacles?: RoomObstacle[];
+  /** cloisons (ex. cloison mobile) dessinées sur le plan, sans bloquer les meubles */
+  partitions?: RoomPartition[];
+};
+
+/** cloison dessinée en pointillés, en cm, dans le repère de la salle */
+export type RoomPartition = {
+  label: string;
+  from: Point;
+  to: Point;
 };
 
 /** rectangle fixe infranchissable, dessiné sur le plan avec son libellé */
@@ -53,6 +65,8 @@ export type Rotation = 0 | 90 | 180 | 270;
 export type TableObject = {
   id: string;
   kind: "table";
+  /** salle où est posée la table */
+  roomId: RoomId;
   /** centre de la table, en cm, dans le repère de la salle */
   x: number;
   y: number;
@@ -68,6 +82,8 @@ export type TableObject = {
 export type ChairObject = {
   id: string;
   kind: "chair";
+  /** salle où est posée la chaise */
+  roomId: RoomId;
   /** centre de la chaise, en cm, dans le repère de la salle */
   x: number;
   y: number;
@@ -79,12 +95,13 @@ export type SceneObject = TableObject | ChairObject;
 /**
  * Zone rectangulaire libre posée sur le plan (ex. "bar", "scène", "zone
  * photo"). Contrairement aux tables/chaises, elle n'est pas contrainte par
- * le contour de la salle : elle peut dépasser, se chevaucher, etc.
+ * le contour d'une salle : elle peut dépasser, se chevaucher, etc. — elle
+ * n'appartient donc à aucune salle et vit dans le repère du plan entier.
  */
 export type ZoneObject = {
   id: string;
   kind: "zone";
-  /** coin haut-gauche de la zone, en cm, dans le repère de la salle */
+  /** coin haut-gauche de la zone, en cm, dans le repère du plan (voir PLAN_ROOMS) */
   x: number;
   y: number;
   widthCm: number;

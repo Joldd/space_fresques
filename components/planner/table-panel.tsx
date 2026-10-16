@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import type { TableObject } from "@/lib/planner/types";
+import type { Room, RoomId, TableObject } from "@/lib/planner/types";
 import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "@/lib/planner/color";
 import { useCloseOnOutsideClick } from "@/lib/planner/use-close-on-outside-click";
 import { SizeFields } from "./size-fields";
@@ -17,6 +17,9 @@ type TablePanelProps = {
   onRecolor: (color: string) => void;
   onRotate: () => void;
   onDelete: () => void;
+  /** salles vers lesquelles la table peut être déplacée (toutes sauf la sienne) */
+  otherRooms: Room[];
+  onMoveToRoom: (roomId: RoomId) => void;
   onClose: () => void;
   /** appelé une seule fois au début d'une édition (focus d'un champ, clic sur une pastille) — empile l'état pour Ctrl+Z */
   onBeginChange: () => void;
@@ -28,7 +31,8 @@ type TablePanelProps = {
  * `key={table.id}` pour réinitialiser le brouillon de nom). Une table ne se
  * redimensionne pas à la souris (contrairement à une zone), on ne peut que
  * la déplacer et ajuster ses dimensions ici. Le nom est facultatif : le
- * vider retire le nom affiché sur la table.
+ * vider retire le nom affiché sur la table. Le drag ne permettant pas de
+ * sortir une table de sa salle, c'est aussi ici qu'on la change de salle.
  */
 export function TablePanel({
   table,
@@ -39,6 +43,8 @@ export function TablePanel({
   onRecolor,
   onRotate,
   onDelete,
+  otherRooms,
+  onMoveToRoom,
   onClose,
   onBeginChange,
 }: TablePanelProps) {
@@ -125,6 +131,18 @@ export function TablePanel({
           🗑 Supprimer
         </button>
       </div>
+
+      {otherRooms.map((room) => (
+        <button
+          key={room.id}
+          type="button"
+          onClick={() => onMoveToRoom(room.id)}
+          title={`Déplacer la table au centre de la salle ${room.name}`}
+          className="rounded-xl bg-black/5 dark:bg-white/10 text-[#4A4636] dark:text-[#D8D2BE] text-sm font-medium py-1.5 px-2 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+        >
+          ⇄ Passer dans « {room.name} »
+        </button>
+      ))}
     </div>
   );
 }
