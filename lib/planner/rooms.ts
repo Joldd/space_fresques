@@ -149,20 +149,38 @@ export type PlacedRoom = {
 };
 
 /**
- * Les salles affichées côte à côte, de gauche à droite, alignées en haut.
- * La première reste à l'origine du plan : le repère du plan coïncide ainsi
- * avec celui de la salle Rue intérieure Saint-Paul (compatibilité des zones
- * enregistrées avant l'ajout de la seconde salle).
+ * Hauteur (en cm, repère de la salle) du milieu de l'arc de cercle de la
+ * salle Rue intérieure Saint-Paul : l'arrondi va du voisin précédent au
+ * voisin suivant de son sommet de contrôle.
+ */
+function passerelleArcCenterY(): number {
+  const [curved] = PASSERELLE_CURVED_VERTICES;
+  const { polygon } = PASSERELLE_ROOM;
+  return (polygon[curved - 1].y + polygon[curved + 1].y) / 2;
+}
+
+/**
+ * Les salles affichées côte à côte, de gauche à droite. La première reste à
+ * l'origine du plan : le repère du plan coïncide ainsi avec celui de la
+ * salle Rue intérieure Saint-Paul (compatibilité des zones enregistrées
+ * avant l'ajout de la seconde salle). La salle Louis Vicat est centrée
+ * verticalement sur l'arc de cercle de la première, en face duquel elle se
+ * trouve.
  */
 export const PLAN_ROOMS: PlacedRoom[] = (() => {
-  const placed: PlacedRoom[] = [];
-  let nextX = 0;
-  for (const room of [PASSERELLE_ROOM, VICAT_ROOM]) {
-    const bounds = polygonBounds(room.polygon);
-    placed.push({ room, offset: { x: nextX - bounds.minX, y: -bounds.minY } });
-    nextX += bounds.maxX - bounds.minX + ROOM_GAP_CM;
-  }
-  return placed;
+  const passerelleBounds = polygonBounds(PASSERELLE_ROOM.polygon);
+  const vicatBounds = polygonBounds(VICAT_ROOM.polygon);
+  const vicatHeight = vicatBounds.maxY - vicatBounds.minY;
+  return [
+    { room: PASSERELLE_ROOM, offset: { x: 0, y: 0 } },
+    {
+      room: VICAT_ROOM,
+      offset: {
+        x: passerelleBounds.maxX + ROOM_GAP_CM - vicatBounds.minX,
+        y: passerelleArcCenterY() - vicatHeight / 2 - vicatBounds.minY,
+      },
+    },
+  ];
 })();
 
 export const DEFAULT_ROOM_ID: RoomId = "passerelle";

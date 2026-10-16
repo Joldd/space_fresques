@@ -2,9 +2,11 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
-import type { RoomId } from "@/lib/planner/types";
+import type { RoomId, ShapeKind } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
 import { PLAN_ROOMS } from "@/lib/planner/rooms";
+import { SHAPES } from "@/lib/planner/shapes";
+import { ShapeIcon } from "./shape-icon";
 import type { PlanData } from "@/lib/planner/plan-file";
 import { PlanLibrary } from "./plan-library";
 
@@ -16,6 +18,8 @@ type PlannerSideBarProps = {
   onAddChair: (roomId: RoomId, diameterCm: number) => void;
   /** les zones ne dépendent d'aucune salle : pas de choix de salle, l'appelant décide où la poser */
   onAddZone: () => void;
+  /** comme les zones, les formes ne dépendent d'aucune salle */
+  onAddShape: (kind: ShapeKind) => void;
   selectedCount: number;
   hasSelectedTable: boolean;
   /** une table seule sélectionnée affiche son propre menu contextuel sur le canvas — la carte "Sélection" générique serait redondante */
@@ -126,6 +130,7 @@ export function PlannerSideBar({
   onAddTable,
   onAddChair,
   onAddZone,
+  onAddShape,
   selectedCount,
   hasSelectedTable,
   hasContextPanel,
@@ -223,9 +228,30 @@ export function PlannerSideBar({
           </button>
         </Card>
 
+        <Card title="Ajouter une forme">
+          <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
+            Flèches et pictos à poser librement, même hors des salles.
+            Clique dessus pour ajouter un texte ou changer la couleur.
+          </p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {SHAPES.map((def) => (
+              <button
+                key={def.kind}
+                type="button"
+                onClick={() => onAddShape(def.kind)}
+                title={`Ajouter : ${def.label}`}
+                className="flex flex-col items-center gap-1 rounded-xl bg-black/5 dark:bg-white/10 px-1 py-2 text-[#3F5A45] dark:text-[#B9D3BC] hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+              >
+                <ShapeIcon kind={def.kind} className="h-7 w-7" />
+                <span className="text-[10px] leading-tight text-[#4A4636] dark:text-[#D8D2BE]">{def.label}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+
         <Card title="Exporter le plan">
           <p className="text-sm text-[#4A4636] dark:text-[#D8D2BE] mb-3">
-            Les salles, les tables et les zones, avec leur légende.
+            Les salles, les tables, les zones et les formes, avec la légende des zones.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button

@@ -10,6 +10,8 @@ import { Chair } from "./chair";
 import { Room } from "./room";
 import { Zone } from "./zone";
 import { ZonePanel } from "./zone-panel";
+import { PlanShape } from "./plan-shape";
+import { ShapePanel } from "./shape-panel";
 import { TablePanel } from "./table-panel";
 import { ZoneLegend } from "./zone-legend";
 import { SelectionRect } from "./selection-rect";
@@ -18,7 +20,8 @@ import { PADDING_PX, ROOM_TITLE_SPACE_PX, cmToPx, computeScale, planOrigin, pxTo
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
 import { DEFAULT_ROOM_ID, PLAN_ROOMS, getPlacedRoom, planBounds } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
-import type { RectArea, RoomId, SceneObject, TableObject } from "@/lib/planner/types";
+import { SHAPE_ROTATION_STEP } from "@/lib/planner/shapes";
+import type { RectArea, RoomId, SceneObject, ShapeKind, ShapeObject, TableObject } from "@/lib/planner/types";
 
 /** les salles sont fixes : leur boîte englobante commune (en cm, repère du plan) aussi */
 const PLAN_BOUNDS = planBounds();
@@ -93,6 +96,22 @@ function getObjectBoundsPx(
   return { x: cx - wPx / 2, y: cy - hPx / 2, width: wPx, height: hPx };
 }
 
+/** boîte englobante à l'écran (axes alignés) d'une forme, rotation comprise */
+function getShapeBoundsPx(
+  shape: ShapeObject,
+  scale: number,
+  origin: { x: number; y: number },
+): RectArea {
+  const rad = (shape.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const wPx = (shape.widthCm * cos + shape.heightCm * sin) * scale;
+  const hPx = (shape.widthCm * sin + shape.heightCm * cos) * scale;
+  const cx = origin.x + shape.x * scale;
+  const cy = origin.y + shape.y * scale;
+  return { x: cx - wPx / 2, y: cy - hPx / 2, width: wPx, height: hPx };
+}
+
 function rectsIntersect(a: RectArea, b: RectArea): boolean {
   return (
     a.x < b.x + b.width &&
@@ -115,8 +134,10 @@ export function PlannerCanvas() {
   const {
     objects,
     zones,
+    shapes,
     selectedIds,
     selectedZoneId,
+    selectedShapeId,
     addTable,
     addChair,
     moveTableToRoom,
@@ -131,6 +152,10 @@ export function PlannerCanvas() {
     removeZone,
     removeSelectedZone,
     selectZone,
+    addShape,
+    updateShape,
+    removeShape,
+    selectShape,
     updateTable,
     pushHistory,
     undo,
@@ -359,6 +384,17 @@ export function PlannerCanvas() {
     [moveSelected],
   );
 
+  const selectedShape = shapes.find((sh) => sh.id === selectedShapeId) ?? null;
+
+  // pivote une forme d'un cran (bouton du menu contextuel, touche R)
+  const rotateShape = useCallback(
+    (shape: ShapeObject) => {
+      pushHistory();
+      updateShape(shape.id, { rotation: shape.rotation + SHAPE_ROTATION_STEP });
+    },
+    [pushHistory, updateShape],
+  );
+
   // -- raccourcis clavier --
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -367,10 +403,12 @@ export function PlannerCanvas() {
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         if (selectedZoneId) removeSelectedZone();
+        else if (selectedShapeId) removeShape(selectedShapeId);
         else removeSelected();
       } else if (e.key === "r" || e.key === "R") {
         e.preventDefault();
-        rotateSelectedTables();
+        if (selectedShape) rotateShape(selectedShape);
+        else rotateSelectedTables();
       } else if (e.key === "Escape") {
         clearSelection();
       } else if (ctrlOrCmd && (e.key === "z" || e.key === "Z")) {
@@ -392,6 +430,10 @@ export function PlannerCanvas() {
     clearSelection,
     removeSelectedZone,
     selectedZoneId,
+    selectedShapeId,
+    selectedShape,
+    removeShape,
+    rotateShape,
     undo,
     copySelection,
     paste,
@@ -411,6 +453,12 @@ export function PlannerCanvas() {
     zonePanelPos = computePanelPosition(zoneLeftPx, zoneRightPx, zoneTopPx, contentWidth);
   }
 
+  let shapePanelPos: { x: number; y: number } | null = null;
+  if (selectedShape) {
+    const box = getShapeBoundsPx(selectedShape, scale, origin);
+    shapePanelPos = computePanelPosition(box.x, box.x + box.width, box.y, contentWidth);
+  }
+
   // menu contextuel d'une table seule sélectionnée (jamais pour un
   // multi-sélection, ni pour une chaise) — remplace alors la barre flottante
   // générique "N éléments sélectionnés"
@@ -428,20 +476,20 @@ export function PlannerCanvas() {
   const handleExportJpeg = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const canvas = buildExportCanvas(stage, zones, scale, origin, EXPORT_TITLE);
+    const canvas = buildExportCanvas(stage, zones, shapes, scale, origin, EXPORT_TITLE);
     downloadCanvasAsJpeg(canvas, `${EXPORT_FILENAME_BASE}.jpg`);
-  }, [zones, scale, origin]);
+  }, [zones, shapes, scale, origin]);
 
   const handleExportPdf = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const canvas = buildExportCanvas(stage, zones, scale, origin, EXPORT_TITLE);
+    const canvas = buildExportCanvas(stage, zones, shapes, scale, origin, EXPORT_TITLE);
     downloadCanvasAsPdf(canvas, `${EXPORT_FILENAME_BASE}.pdf`);
-  }, [zones, scale, origin]);
+  }, [zones, shapes, scale, origin]);
 
-  // une zone n'appartient à aucune salle : on la pose au centre de la
-  // partie du plan actuellement visible (scroll et zoom compris)
-  const handleAddZone = useCallback(() => {
+  // zones et formes n'appartiennent à aucune salle : on les pose au centre
+  // de la partie du plan actuellement visible (scroll et zoom compris)
+  const visiblePlanCenter = useCallback(() => {
     const container = scrollContainerRef.current;
     const centerPx = container
       ? {
@@ -449,14 +497,20 @@ export function PlannerCanvas() {
           y: container.scrollTop + container.clientHeight / 2,
         }
       : { x: contentWidth / 2, y: contentHeight / 2 };
-    addZone({ x: pxToCm(centerPx.x - origin.x, scale), y: pxToCm(centerPx.y - origin.y, scale) });
-  }, [addZone, contentWidth, contentHeight, origin, scale]);
+    return { x: pxToCm(centerPx.x - origin.x, scale), y: pxToCm(centerPx.y - origin.y, scale) };
+  }, [contentWidth, contentHeight, origin, scale]);
 
-  const currentPlan = useMemo(() => ({ objects, zones }), [objects, zones]);
+  const handleAddZone = useCallback(() => addZone(visiblePlanCenter()), [addZone, visiblePlanCenter]);
+  const handleAddShape = useCallback(
+    (kind: ShapeKind) => addShape(kind, visiblePlanCenter()),
+    [addShape, visiblePlanCenter],
+  );
+
+  const currentPlan = useMemo(() => ({ objects, zones, shapes }), [objects, zones, shapes]);
 
   const handleReset = useCallback(() => {
     const confirmed = window.confirm(
-      "Réinitialiser le plan ?\n\nToutes les tables, chaises et zones des deux salles sont supprimées. Ctrl+Z permet de revenir en arrière juste après.",
+      "Réinitialiser le plan ?\n\nToutes les tables, chaises, zones et formes sont supprimées. Ctrl+Z permet de revenir en arrière juste après.",
     );
     if (confirmed) resetPlan();
   }, [resetPlan]);
@@ -469,6 +523,7 @@ export function PlannerCanvas() {
         onAddTable={addTable}
         onAddChair={addChair}
         onAddZone={handleAddZone}
+        onAddShape={handleAddShape}
         selectedCount={selectedCount}
         hasSelectedTable={hasSelectedTable}
         hasContextPanel={!!singleSelectedTable}
@@ -578,6 +633,19 @@ export function PlannerCanvas() {
                   />
                 ),
               )}
+              {/* au-dessus des tables : flèches et pictos servent souvent à les signaler */}
+              {shapes.map((shape) => (
+                <PlanShape
+                  key={shape.id}
+                  shape={shape}
+                  scale={scale}
+                  origin={origin}
+                  selected={shape.id === selectedShapeId}
+                  onSelect={selectShape}
+                  onChange={updateShape}
+                  onBeginChange={pushHistory}
+                />
+              ))}
               {selectionArea && <SelectionRect area={selectionArea} />}
             </Layer>
           </Stage>
@@ -593,6 +661,22 @@ export function PlannerCanvas() {
               onRecolor={(color) => updateZone(selectedZone.id, { color })}
               onDelete={() => removeZone(selectedZone.id)}
               onClose={() => selectZone(null)}
+              onBeginChange={pushHistory}
+            />
+          )}
+
+          {selectedShape && shapePanelPos && (
+            <ShapePanel
+              key={selectedShape.id}
+              shape={selectedShape}
+              x={shapePanelPos.x}
+              y={shapePanelPos.y}
+              onChangeText={(text) => updateShape(selectedShape.id, { text })}
+              onResize={(widthCm, heightCm) => updateShape(selectedShape.id, { widthCm, heightCm })}
+              onRecolor={(color) => updateShape(selectedShape.id, { color })}
+              onRotate={() => rotateShape(selectedShape)}
+              onDelete={() => removeShape(selectedShape.id)}
+              onClose={() => selectShape(null)}
               onBeginChange={pushHistory}
             />
           )}

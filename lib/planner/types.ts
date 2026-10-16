@@ -111,6 +111,42 @@ export type ZoneObject = {
   name: string;
 };
 
+export type ShapeKind =
+  | "arrow"
+  | "double-arrow"
+  | "warning"
+  | "star"
+  | "circle"
+  | "square"
+  | "triangle"
+  | "diamond"
+  | "heart"
+  | "cross"
+  | "pin"
+  | "bubble";
+
+/**
+ * Forme / picto libre (flèche, panneau attention, étoile...) posé sur le
+ * plan : comme une zone, elle n'appartient à aucune salle et peut être
+ * posée n'importe où, y compris hors des salles (voir lib/planner/shapes.ts).
+ */
+export type ShapeObject = {
+  id: string;
+  kind: "shape";
+  shape: ShapeKind;
+  /** centre de la forme, en cm, dans le repère du plan */
+  x: number;
+  y: number;
+  widthCm: number;
+  heightCm: number;
+  /** en degrés, sens horaire, dans [0, 360) */
+  rotation: number;
+  /** couleur pleine (hex) */
+  color: string;
+  /** texte libre affiché sur la forme ; optionnel (absent ou vide = pas de texte) */
+  text?: string;
+};
+
 export type Point = { x: number; y: number };
 
 export type RectArea = { x: number; y: number; width: number; height: number };

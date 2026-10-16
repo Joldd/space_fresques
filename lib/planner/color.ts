@@ -24,6 +24,16 @@ export function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** blanc ou brun foncé selon la luminosité du fond, pour un texte lisible sur n'importe quelle couleur */
+export function readableTextColor(hex: string): string {
+  const clean = hex.replace("#", "");
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return "#ffffff";
+  const luminance = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return luminance > 0.7 ? "#3B3526" : "#ffffff";
+}
+
 /** assombrit une couleur hex d'un facteur (0-1) — utilisé pour un contour lisible sur fond clair */
 export function darken(hex: string, amount = 0.22): string {
   const clean = hex.replace("#", "");

@@ -3,9 +3,10 @@
 // salle + zones) : utilisé pour l'export/import en fichier .json (partage) et pour
 // les plans enregistrés dans le navigateur (voir saved-plans.ts).
 
-import type { ChairObject, SceneObject, TableObject, ZoneObject } from "./types";
+import type { ChairObject, SceneObject, ShapeObject, TableObject, ZoneObject } from "./types";
 import { DEFAULT_ROOM_ID, isRoomId } from "./rooms";
 import { isValidZone } from "./zones";
+import { isValidShape } from "./shapes";
 
 /**
  * Les salles elles-mêmes (contours, obstacles...) ne font pas partie du
@@ -15,6 +16,7 @@ import { isValidZone } from "./zones";
 export type PlanData = {
   objects: SceneObject[];
   zones: ZoneObject[];
+  shapes: ShapeObject[];
 };
 
 /** marqueur permettant de reconnaître un fichier exporté par l'outil */
@@ -76,13 +78,15 @@ function withDefaultRoomId(value: unknown): unknown {
  */
 export function sanitizePlanData(value: unknown): PlanData | null {
   if (!value || typeof value !== "object") return null;
-  const raw = value as { objects?: unknown; zones?: unknown };
+  const raw = value as { objects?: unknown; zones?: unknown; shapes?: unknown };
   if (!Array.isArray(raw.objects) && !Array.isArray(raw.zones)) return null;
   const objects = Array.isArray(raw.objects)
     ? raw.objects.map(withDefaultRoomId).filter(isValidSceneObject)
     : [];
   const zones = Array.isArray(raw.zones) ? raw.zones.filter(isValidZone) : [];
-  return { objects, zones };
+  // les formes sont apparues après la v2 : absentes des plans plus anciens
+  const shapes = Array.isArray(raw.shapes) ? raw.shapes.filter(isValidShape) : [];
+  return { objects, zones, shapes };
 }
 
 export function serializePlanFile(plan: PlanData, name: string): string {
@@ -93,6 +97,7 @@ export function serializePlanFile(plan: PlanData, name: string): string {
     savedAt: new Date().toISOString(),
     objects: plan.objects,
     zones: plan.zones,
+    shapes: plan.shapes,
   };
   return JSON.stringify(file, null, 2);
 }

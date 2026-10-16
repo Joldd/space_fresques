@@ -1,7 +1,7 @@
 // lib/planner/export.ts
 import type Konva from "konva";
 import { jsPDF } from "jspdf";
-import type { ZoneObject } from "./types";
+import type { ShapeObject, ZoneObject } from "./types";
 import { planBounds } from "./rooms";
 import { ROOM_TITLE_SPACE_PX, cmToPx } from "./scale";
 
@@ -27,12 +27,13 @@ const HEADER_HEIGHT_PX = LEGEND_PADDING_PX + HEADER_TITLE_LINE_PX + HEADER_DATE_
 
 /**
  * Zone de recadrage (en px écran, repère du Stage) qui englobe les salles
- * (titres compris) ET toutes les zones — ces dernières pouvant dépasser du
- * contour des salles, un export cadré uniquement sur les salles les
- * couperait sinon.
+ * (titres compris) ET toutes les zones et formes — ces dernières pouvant
+ * dépasser du contour des salles, un export cadré uniquement sur les salles
+ * les couperait sinon.
  */
 function computeExportCropPx(
   zones: ZoneObject[],
+  shapes: ShapeObject[],
   scale: number,
   origin: { x: number; y: number },
 ) {
@@ -47,6 +48,15 @@ function computeExportCropPx(
     maxX = Math.max(maxX, zone.x + zone.widthCm);
     minY = Math.min(minY, zone.y);
     maxY = Math.max(maxY, zone.y + zone.heightCm);
+  }
+
+  for (const shape of shapes) {
+    // demi-diagonale : couvre la forme quelle que soit sa rotation
+    const r = Math.hypot(shape.widthCm, shape.heightCm) / 2;
+    minX = Math.min(minX, shape.x - r);
+    maxX = Math.max(maxX, shape.x + r);
+    minY = Math.min(minY, shape.y - r);
+    maxY = Math.max(maxY, shape.y + r);
   }
 
   const top = origin.y + cmToPx(minY, scale);
@@ -105,18 +115,19 @@ function buildLegendCanvas(zones: ZoneObject[], widthPx: number): HTMLCanvasElem
 }
 
 /**
- * Compose l'export final : le plan (salles, tables, zones — cadré pour
+ * Compose l'export final : le plan (salles, tables, zones, formes — cadré pour
  * inclure les zones qui dépasseraient du contour) au-dessus de la légende
  * des zones. `origin` est l'origine du repère du plan dans le Stage.
  */
 export function buildExportCanvas(
   stage: Konva.Stage,
   zones: ZoneObject[],
+  shapes: ShapeObject[],
   scale: number,
   origin: { x: number; y: number },
   title: string,
 ): HTMLCanvasElement {
-  const crop = computeExportCropPx(zones, scale, origin);
+  const crop = computeExportCropPx(zones, shapes, scale, origin);
   const planCanvas = stage.toCanvas({ ...crop, pixelRatio: EXPORT_PIXEL_RATIO });
 
   const legendCanvas = buildLegendCanvas(zones, planCanvas.width / EXPORT_PIXEL_RATIO);

@@ -2,7 +2,17 @@
 "use client";
 
 import { useCallback, useEffect, useReducer } from "react";
-import type { ChairObject, Point, RoomId, Rotation, SceneObject, TableObject, ZoneObject } from "./types";
+import type {
+  ChairObject,
+  Point,
+  RoomId,
+  Rotation,
+  SceneObject,
+  ShapeKind,
+  ShapeObject,
+  TableObject,
+  ZoneObject,
+} from "./types";
 import { getPlacedRoom, objectFloorArea } from "./rooms";
 import { clampGroupDelta, clampObjectPosition, polygonBounds } from "./geometry";
 import {
@@ -11,6 +21,7 @@ import {
   MIN_ZONE_SIZE_CM,
 } from "./zones";
 import { COLOR_PALETTE, DEFAULT_TABLE_COLOR } from "./color";
+import { DEFAULT_SHAPE_COLOR, MIN_SHAPE_SIZE_CM, getShapeDefinition, normalizeRotation } from "./shapes";
 import { sanitizePlanData, type PlanData } from "./plan-file";
 
 const STORAGE_KEY = "space-fresques:planner";
@@ -30,6 +41,9 @@ type State = {
   selectedIds: string[];
   /** id de la zone sélectionnée (une seule à la fois, exclusif avec `selectedIds`) */
   selectedZoneId: string | null;
+  shapes: ShapeObject[];
+  /** id de la forme sélectionnée (une seule à la fois, exclusif avec `selectedIds` et `selectedZoneId`) */
+  selectedShapeId: string | null;
   /** true dès que la lecture du localStorage a été tentée (succès ou non) */
   hydrated: boolean;
   /** états antérieurs pour Ctrl+Z — le plus récent en dernier */
@@ -38,13 +52,14 @@ type State = {
   clipboard: ClipboardData | null;
 };
 
-type HistorySnapshot = { objects: SceneObject[]; zones: ZoneObject[] };
-type ClipboardData = { objects: SceneObject[]; zones: ZoneObject[] };
+type HistorySnapshot = { objects: SceneObject[]; zones: ZoneObject[]; shapes: ShapeObject[] };
+type ClipboardData = { objects: SceneObject[]; zones: ZoneObject[]; shapes: ShapeObject[] };
 
 type ZonePatch = Partial<Omit<ZoneObject, "id" | "kind">>;
+export type ShapePatch = Partial<Omit<ShapeObject, "id" | "kind" | "shape">>;
 
 type Action =
-  | { type: "LOAD"; objects: SceneObject[]; zones: ZoneObject[] }
+  | { type: "LOAD"; objects: SceneObject[]; zones: ZoneObject[]; shapes: ShapeObject[] }
   | { type: "MARK_HYDRATED" }
   | { type: "ADD_TABLE"; roomId: RoomId; widthCm: number; depthCm: number }
   | { type: "ADD_CHAIR"; roomId: RoomId; diameterCm: number }
@@ -60,6 +75,10 @@ type Action =
   | { type: "REMOVE_ZONE"; id: string }
   | { type: "REMOVE_SELECTED_ZONE" }
   | { type: "SELECT_ZONE"; id: string | null }
+  | { type: "ADD_SHAPE"; shape: ShapeKind; center: Point }
+  | { type: "UPDATE_SHAPE"; id: string; patch: ShapePatch }
+  | { type: "REMOVE_SHAPE"; id: string }
+  | { type: "SELECT_SHAPE"; id: string | null }
   | { type: "UPDATE_TABLE"; id: string; patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color" | "name">> }
   | { type: "PUSH_HISTORY" }
   | { type: "UNDO" }
@@ -99,7 +118,7 @@ function clampAllObjects(objects: SceneObject[]): SceneObject[] {
  * *avant* changement — jamais avec le nouvel état en cours de construction.
  */
 function withHistory(state: State): HistorySnapshot[] {
-  const next = [...state.past, { objects: state.objects, zones: state.zones }];
+  const next = [...state.past, { objects: state.objects, zones: state.zones, shapes: state.shapes }];
   return next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
 }
 
@@ -141,6 +160,14 @@ function spawnZonePosition(state: State, center: Point): { x: number; y: number 
   };
 }
 
+/** centre d'une nouvelle forme (posée sur `center` + cascade), dans le repère du plan — pas de clamp */
+function spawnShapePosition(state: State, center: Point): Point {
+  const step = 24; // cm
+  const cascadeLength = 8;
+  const offset = (state.shapes.length % cascadeLength) * step;
+  return { x: center.x + offset, y: center.y + offset };
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "LOAD":
@@ -148,8 +175,10 @@ function reducer(state: State, action: Action): State {
         ...state,
         objects: clampAllObjects(action.objects),
         zones: action.zones,
+        shapes: action.shapes,
         selectedIds: [],
         selectedZoneId: null,
+        selectedShapeId: null,
         hydrated: true,
         past: [],
         clipboard: null,
@@ -183,6 +212,7 @@ function reducer(state: State, action: Action): State {
         objects: [...state.objects, table],
         selectedIds: [table.id],
         selectedZoneId: null,
+        selectedShapeId: null,
       };
     }
 
@@ -206,6 +236,7 @@ function reducer(state: State, action: Action): State {
         objects: [...state.objects, chair],
         selectedIds: [chair.id],
         selectedZoneId: null,
+        selectedShapeId: null,
       };
     }
 
@@ -270,6 +301,7 @@ function reducer(state: State, action: Action): State {
           ? toggleSelection(state.selectedIds, action.ids)
           : action.ids,
         selectedZoneId: null,
+        selectedShapeId: null,
       };
 
     case "SELECT_RECT":
@@ -279,12 +311,13 @@ function reducer(state: State, action: Action): State {
           ? mergeSelection(state.selectedIds, action.ids)
           : action.ids,
         selectedZoneId: null,
+        selectedShapeId: null,
       };
 
     case "CLEAR_SELECTION":
-      return state.selectedIds.length === 0 && state.selectedZoneId === null
+      return state.selectedIds.length === 0 && state.selectedZoneId === null && state.selectedShapeId === null
         ? state
-        : { ...state, selectedIds: [], selectedZoneId: null };
+        : { ...state, selectedIds: [], selectedZoneId: null, selectedShapeId: null };
 
     case "ADD_ZONE": {
       const { x, y } = spawnZonePosition(state, action.center);
@@ -344,6 +377,58 @@ function reducer(state: State, action: Action): State {
         ...state,
         selectedZoneId: action.id,
         selectedIds: action.id === null ? state.selectedIds : [],
+        selectedShapeId: action.id === null ? state.selectedShapeId : null,
+      };
+
+    case "ADD_SHAPE": {
+      const definition = getShapeDefinition(action.shape);
+      const { x, y } = spawnShapePosition(state, action.center);
+      const shape: ShapeObject = {
+        id: crypto.randomUUID(),
+        kind: "shape",
+        shape: action.shape,
+        x,
+        y,
+        widthCm: definition.defaultWidthCm,
+        heightCm: definition.defaultHeightCm,
+        rotation: 0,
+        color: DEFAULT_SHAPE_COLOR,
+      };
+      return {
+        ...state,
+        past: withHistory(state),
+        shapes: [...state.shapes, shape],
+        selectedShapeId: shape.id,
+        selectedZoneId: null,
+        selectedIds: [],
+      };
+    }
+
+    case "UPDATE_SHAPE": {
+      const patch = { ...action.patch };
+      if (patch.widthCm !== undefined) patch.widthCm = Math.max(patch.widthCm, MIN_SHAPE_SIZE_CM);
+      if (patch.heightCm !== undefined) patch.heightCm = Math.max(patch.heightCm, MIN_SHAPE_SIZE_CM);
+      if (patch.rotation !== undefined) patch.rotation = normalizeRotation(patch.rotation);
+      return {
+        ...state,
+        shapes: state.shapes.map((sh) => (sh.id === action.id ? { ...sh, ...patch } : sh)),
+      };
+    }
+
+    case "REMOVE_SHAPE":
+      return {
+        ...state,
+        past: withHistory(state),
+        shapes: state.shapes.filter((sh) => sh.id !== action.id),
+        selectedShapeId: state.selectedShapeId === action.id ? null : state.selectedShapeId,
+      };
+
+    case "SELECT_SHAPE":
+      return {
+        ...state,
+        selectedShapeId: action.id,
+        selectedZoneId: action.id === null ? state.selectedZoneId : null,
+        selectedIds: action.id === null ? state.selectedIds : [],
       };
 
     case "UPDATE_TABLE": {
@@ -378,28 +463,34 @@ function reducer(state: State, action: Action): State {
         ...state,
         objects: previous.objects,
         zones: previous.zones,
+        shapes: previous.shapes,
         past: state.past.slice(0, -1),
         selectedIds: [],
         selectedZoneId: null,
+        selectedShapeId: null,
       };
     }
 
     case "COPY_SELECTION": {
       if (state.selectedZoneId) {
         const zone = state.zones.find((z) => z.id === state.selectedZoneId);
-        return zone ? { ...state, clipboard: { objects: [], zones: [zone] } } : state;
+        return zone ? { ...state, clipboard: { objects: [], zones: [zone], shapes: [] } } : state;
+      }
+      if (state.selectedShapeId) {
+        const shape = state.shapes.find((sh) => sh.id === state.selectedShapeId);
+        return shape ? { ...state, clipboard: { objects: [], zones: [], shapes: [shape] } } : state;
       }
       if (state.selectedIds.length > 0) {
         const selected = new Set(state.selectedIds);
         const objects = state.objects.filter((o) => selected.has(o.id));
-        return objects.length > 0 ? { ...state, clipboard: { objects, zones: [] } } : state;
+        return objects.length > 0 ? { ...state, clipboard: { objects, zones: [], shapes: [] } } : state;
       }
       return state;
     }
 
     case "PASTE": {
       const clip = state.clipboard;
-      if (!clip || (clip.objects.length === 0 && clip.zones.length === 0)) return state;
+      if (!clip || (clip.objects.length === 0 && clip.zones.length === 0 && clip.shapes.length === 0)) return state;
 
       const newObjects: SceneObject[] = clip.objects.map((o) => {
         const candidate = { ...o, id: crypto.randomUUID(), x: o.x + PASTE_OFFSET_CM, y: o.y + PASTE_OFFSET_CM };
@@ -412,14 +503,22 @@ function reducer(state: State, action: Action): State {
         x: z.x + PASTE_OFFSET_CM,
         y: z.y + PASTE_OFFSET_CM,
       }));
+      const newShapes: ShapeObject[] = clip.shapes.map((sh) => ({
+        ...sh,
+        id: crypto.randomUUID(),
+        x: sh.x + PASTE_OFFSET_CM,
+        y: sh.y + PASTE_OFFSET_CM,
+      }));
 
       return {
         ...state,
         past: withHistory(state),
         objects: [...state.objects, ...newObjects],
         zones: [...state.zones, ...newZones],
+        shapes: [...state.shapes, ...newShapes],
         selectedIds: newObjects.map((o) => o.id),
         selectedZoneId: newZones[0]?.id ?? null,
+        selectedShapeId: newShapes[0]?.id ?? null,
       };
     }
 
@@ -441,8 +540,10 @@ function reducer(state: State, action: Action): State {
         past: withHistory(state),
         objects: clampAllObjects(action.plan.objects),
         zones: action.plan.zones,
+        shapes: action.plan.shapes,
         selectedIds: [],
         selectedZoneId: null,
+        selectedShapeId: null,
       };
 
     default:
@@ -454,8 +555,10 @@ function initialState(): State {
   return {
     objects: [],
     zones: [],
+    shapes: [],
     selectedIds: [],
     selectedZoneId: null,
+    selectedShapeId: null,
     hydrated: false,
     past: [],
     clipboard: null,
@@ -492,12 +595,12 @@ export function usePlannerStore() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ objects: state.objects, zones: state.zones }),
+        JSON.stringify({ objects: state.objects, zones: state.zones, shapes: state.shapes }),
       );
     } catch {
       // quota dépassé ou stockage désactivé : on ignore
     }
-  }, [state.hydrated, state.objects, state.zones]);
+  }, [state.hydrated, state.objects, state.zones, state.shapes]);
 
   const addTable = useCallback(
     (roomId: RoomId, widthCm: number, depthCm: number) =>
@@ -556,6 +659,19 @@ export function usePlannerStore() {
     (id: string | null) => dispatch({ type: "SELECT_ZONE", id }),
     [],
   );
+  const addShape = useCallback(
+    (shape: ShapeKind, center: Point) => dispatch({ type: "ADD_SHAPE", shape, center }),
+    [],
+  );
+  const updateShape = useCallback(
+    (id: string, patch: ShapePatch) => dispatch({ type: "UPDATE_SHAPE", id, patch }),
+    [],
+  );
+  const removeShape = useCallback((id: string) => dispatch({ type: "REMOVE_SHAPE", id }), []);
+  const selectShape = useCallback(
+    (id: string | null) => dispatch({ type: "SELECT_SHAPE", id }),
+    [],
+  );
   const updateTable = useCallback(
     (id: string, patch: Partial<Pick<TableObject, "widthCm" | "depthCm" | "color" | "name">>) =>
       dispatch({ type: "UPDATE_TABLE", id, patch }),
@@ -571,8 +687,10 @@ export function usePlannerStore() {
   return {
     objects: state.objects,
     zones: state.zones,
+    shapes: state.shapes,
     selectedIds: state.selectedIds,
     selectedZoneId: state.selectedZoneId,
+    selectedShapeId: state.selectedShapeId,
     canUndo: state.past.length > 0,
     canPaste: state.clipboard !== null,
     addTable,
@@ -589,6 +707,10 @@ export function usePlannerStore() {
     removeZone,
     removeSelectedZone,
     selectZone,
+    addShape,
+    updateShape,
+    removeShape,
+    selectShape,
     updateTable,
     pushHistory,
     undo,
