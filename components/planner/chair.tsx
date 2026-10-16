@@ -1,6 +1,7 @@
 // components/planner/chair.tsx
 "use client";
 
+import { memo } from "react";
 import { Circle } from "react-konva";
 import type { ChairObject, SceneObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
@@ -19,7 +20,7 @@ type ChairProps = {
   onDragBegin: () => void;
 };
 
-export function Chair({
+export const Chair = memo(function Chair({
   chair,
   scale,
   origin,
@@ -62,4 +63,4 @@ export function Chair({
       onMouseLeave={(e) => setCanvasCursor(e, "default")}
     />
   );
-}
+});

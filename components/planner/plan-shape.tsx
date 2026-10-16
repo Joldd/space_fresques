@@ -1,7 +1,7 @@
 // components/planner/plan-shape.tsx
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { Group, Path, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 import type { ShapeObject } from "@/lib/planner/types";
@@ -35,7 +35,7 @@ type PlanShapeProps = {
  * comme une zone, elle peut sortir des salles. Le texte reste horizontal
  * quelle que soit la rotation, comme le nom d'une table.
  */
-export function PlanShape({ shape, scale, origin, selected, onSelect, onChange, onBeginChange }: PlanShapeProps) {
+export const PlanShape = memo(function PlanShape({ shape, scale, origin, selected, onSelect, onChange, onBeginChange }: PlanShapeProps) {
   const groupRef = useRef<Konva.Group>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
@@ -161,4 +161,4 @@ export function PlanShape({ shape, scale, origin, selected, onSelect, onChange, 
       )}
     </>
   );
-}
+});

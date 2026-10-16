@@ -35,7 +35,9 @@ export function useConstrainedDrag({
   onDragBegin?: () => void;
 }) {
   const dragGroupRef = useRef<SceneObject[]>([]);
-  const dragStartPxRef = useRef<Point>({ x: 0, y: 0 });
+  /** position absolue (repère de l'écran du Stage) au début du drag — celui de dragBoundFunc */
+  const dragStartAbsRef = useRef<Point>({ x: 0, y: 0 });
+  /** dernière position relative au calque (repère du contenu), pour les deltas successifs */
   const lastPointPxRef = useRef<Point>({ x: 0, y: 0 });
 
   function handleMouseDown(e: Konva.KonvaEventObject<MouseEvent>) {
@@ -45,15 +47,16 @@ export function useConstrainedDrag({
 
   function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
     onDragBegin?.();
-    const pos = { x: e.target.x(), y: e.target.y() };
-    dragStartPxRef.current = pos;
-    lastPointPxRef.current = pos;
+    // le Stage est décalé par le défilement (voir planner-canvas.tsx) :
+    // dragBoundFunc reçoit des positions absolues, pas relatives au calque
+    dragStartAbsRef.current = e.target.getAbsolutePosition();
+    lastPointPxRef.current = { x: e.target.x(), y: e.target.y() };
     dragGroupRef.current = getDragGroup(id);
   }
 
   function dragBoundFunc(pos: Point): Point {
     const group = dragGroupRef.current;
-    const start = dragStartPxRef.current;
+    const start = dragStartAbsRef.current;
     if (group.length === 0) return pos;
 
     const dxCmRaw = pxToCm(pos.x - start.x, scale);

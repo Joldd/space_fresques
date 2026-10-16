@@ -26,7 +26,7 @@ import {
   pxToCm,
 } from "@/lib/planner/scale";
 import { HEADER_HEIGHT_PX, SIDEBAR_BREAKPOINT_PX, SIDEBAR_WIDTH_PX } from "@/lib/planner/constants";
-import { DEFAULT_ROOM_ID, PLAN_ROOMS, getPlacedRoom, planBounds } from "@/lib/planner/rooms";
+import { DEFAULT_ROOM_ID, PLAN_ROOMS, planBounds } from "@/lib/planner/rooms";
 import { buildExportCanvas, downloadCanvasAsJpeg, downloadCanvasAsPdf } from "@/lib/planner/export";
 import { SHAPE_ROTATION_STEP } from "@/lib/planner/shapes";
 import type { RectArea, RoomId, SceneObject, ShapeKind, ShapeObject, TableObject } from "@/lib/planner/types";
@@ -178,6 +178,8 @@ export function PlannerCanvas() {
   // page, le canvas doit occuper toute la largeur plutôt que d'en soustraire
   // SIDEBAR_WIDTH_PX
   const [stageSize, setStageSize] = useState(() => computeStageSize());
+  /** taille de la partie visible du conteneur défilant (hors barres de défilement) */
+  const [viewport, setViewport] = useState(stageSize);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<RoomId>(DEFAULT_ROOM_ID);
   const stageRef = useRef<Konva.Stage>(null);
@@ -192,10 +194,14 @@ export function PlannerCanvas() {
 
   // -- zoom (Ctrl + molette) et défilement --
   // stageSize reste la taille "ajustée à l'écran" (zoom 1x) ; le contenu
-  // (Stage + panneaux) grandit avec le zoom dans un conteneur `overflow:
-  // auto`, qui fournit gratuitement les barres de scroll et le défilement
-  // molette (vertical) / Maj+molette (horizontal, comportement natif du
-  // navigateur sur un conteneur scrollable).
+  // grandit avec le zoom dans un conteneur `overflow: auto`, qui fournit
+  // gratuitement les barres de scroll et le défilement molette (vertical) /
+  // Maj+molette (horizontal, comportement natif du navigateur). Le canvas,
+  // lui, ne grandit pas : il garde la taille de la partie visible, reste
+  // collé à l'écran (sticky) et c'est son contenu qui est décalé du
+  // défilement (syncStageToScroll) — un canvas aussi grand que le plan
+  // zoomé coûterait cher en mémoire et dépasserait vite la taille maximale
+  // d'un canvas sur Safari (iPad, iPhone), qui s'afficherait alors vide.
   const [zoomLevel, setZoomLevel] = useState(1);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingZoomAnchorRef = useRef<{
@@ -210,15 +216,51 @@ export function PlannerCanvas() {
   const planHeightPx = (PLAN_BOUNDS.maxY - PLAN_BOUNDS.minY) * scale + ROOM_TITLE_SPACE_PX;
   const contentWidth = Math.max(stageSize.width, planWidthPx + PADDING_PX * 2);
   const contentHeight = Math.max(stageSize.height, planHeightPx + PADDING_PX * 2);
+  const visibleWidth = Math.min(viewport.width, contentWidth);
+  const visibleHeight = Math.min(viewport.height, contentHeight);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      setViewport({ width: container.clientWidth, height: container.clientHeight });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // décale le contenu du Stage du défilement en cours (impératif : pas de
+  // re-rendu React à chaque événement de défilement)
+  const syncStageToScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const stage = stageRef.current;
+    if (!container || !stage) return;
+    stage.position({ x: -container.scrollLeft, y: -container.scrollTop });
+    stage.batchDraw();
+  }, []);
   // origine du repère du plan (celui des zones) ; chaque salle a la sienne,
   // décalée de sa position sur le plan (celle des tables et chaises)
-  const origin = planOrigin(PLAN_BOUNDS, { width: contentWidth, height: contentHeight }, scale);
+  const origin = useMemo(
+    () => planOrigin(PLAN_BOUNDS, { width: contentWidth, height: contentHeight }, scale),
+    [contentWidth, contentHeight, scale],
+  );
+  // objets mémoïsés (identité stable tant que le zoom et le cadrage ne
+  // changent pas) : Room est mémoïsée et ne doit pas être re-rendue par un
+  // simple drag de table
+  const roomOrigins = useMemo(
+    () =>
+      new Map(
+        PLAN_ROOMS.map(({ room, offset }) => [
+          room.id,
+          { x: origin.x + cmToPx(offset.x, scale), y: origin.y + cmToPx(offset.y, scale) },
+        ]),
+      ),
+    [origin, scale],
+  );
   const roomOriginPx = useCallback(
-    (roomId: RoomId) => {
-      const { offset } = getPlacedRoom(roomId);
-      return { x: origin.x + cmToPx(offset.x, scale), y: origin.y + cmToPx(offset.y, scale) };
-    },
-    [origin.x, origin.y, scale],
+    // toutes les salles sont dans la Map : le repli sur l'origine du plan est inatteignable
+    (roomId: RoomId) => roomOrigins.get(roomId) ?? origin,
+    [roomOrigins, origin],
   );
 
   // applique un facteur de zoom en gardant le point (clientX, clientY) fixe à
@@ -288,7 +330,10 @@ export function PlannerCanvas() {
     const newContentY = origin.y + cmToPx(anchor.planCm.y, scale);
     container.scrollLeft = newContentX - (anchor.clientX - rect.left);
     container.scrollTop = newContentY - (anchor.clientY - rect.top);
-  }, [scale, origin]);
+    // sans attendre l'événement de défilement : le Stage doit être recalé
+    // avant la peinture, en même temps que le nouveau zoom
+    syncStageToScroll();
+  }, [scale, origin, syncStageToScroll]);
 
   // -- sélection par zone (rubber-band) --
   const dragSelectRef = useRef<{ start: { x: number; y: number }; additive: boolean } | null>(
@@ -300,12 +345,12 @@ export function PlannerCanvas() {
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = e.target.getStage();
       if (!stage) return;
-      const isEmptyClick =
-        e.target === stage ||
-        (typeof e.target.name === "function" && e.target.name() === "room-background");
-      if (!isEmptyClick) return;
+      // les salles sont sur une couche qui n'écoute pas les événements : un
+      // clic sur le fond d'une salle arrive ici avec le Stage pour cible
+      if (e.target !== stage) return;
 
-      const pos = stage.getPointerPosition();
+      // position dans le repère du contenu (le Stage est décalé du défilement)
+      const pos = stage.getRelativePointerPosition();
       if (!pos) return;
       const additive = e.evt.ctrlKey || e.evt.metaKey || e.evt.shiftKey;
       dragSelectRef.current = { start: pos, additive };
@@ -317,7 +362,7 @@ export function PlannerCanvas() {
   const handleStageMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (!dragSelectRef.current) return;
     const stage = e.target.getStage();
-    const pos = stage?.getPointerPosition();
+    const pos = stage?.getRelativePointerPosition();
     if (!pos) return;
     setSelectionArea(normalizeRect(dragSelectRef.current.start, pos));
   }, []);
@@ -332,7 +377,7 @@ export function PlannerCanvas() {
       // recalculé directement depuis le pointeur (l'état `selectionArea` peut
       // ne pas avoir été re-rendu à temps entre le dernier mousemove et ce mouseup)
       const stage = e.target.getStage();
-      const pos = stage?.getPointerPosition();
+      const pos = stage?.getRelativePointerPosition();
       if (!pos) return;
       const area = normalizeRect(dragSelect.start, pos);
 
@@ -354,9 +399,18 @@ export function PlannerCanvas() {
   // dispatch de sélection, dont le timing n'est pas garanti avant le dragstart)
   const resolvedSelectionRef = useRef<string[]>(selectedIds);
 
+  // dernières valeurs, lues par des callbacks à identité stable : Table et
+  // Chair sont mémoïsées, et un callback recréé à chaque déplacement (la
+  // liste des objets change à chaque mouvement de souris) les re-rendrait
+  // toutes pendant un drag au lieu de la seule table déplacée
+  const latestRef = useRef({ objects, zones, shapes, selectedIds });
+  useLayoutEffect(() => {
+    latestRef.current = { objects, zones, shapes, selectedIds };
+  }, [objects, zones, shapes, selectedIds]);
+
   const handleObjectPointerDown = useCallback(
     (id: string, additive: boolean) => {
-      const current = selectedIds;
+      const current = latestRef.current.selectedIds;
       resolvedSelectionRef.current = additive
         ? current.includes(id)
           ? current.filter((x) => x !== id)
@@ -373,7 +427,7 @@ export function PlannerCanvas() {
         select([id], false);
       }
     },
-    [select, selectedIds],
+    [select],
   );
 
   const getDragGroup = useCallback(
@@ -382,9 +436,9 @@ export function PlannerCanvas() {
         ? resolvedSelectionRef.current
         : [id];
       const idSet = new Set(ids);
-      return objects.filter((obj) => idSet.has(obj.id));
+      return latestRef.current.objects.filter((obj) => idSet.has(obj.id));
     },
-    [objects],
+    [],
   );
 
   const handleDragDelta = useCallback(
@@ -492,7 +546,7 @@ export function PlannerCanvas() {
     const stage = stageRef.current;
     if (!stage) return;
     const canvas = buildExportCanvas(stage, zones, shapes, scale, origin, EXPORT_TITLE);
-    downloadCanvasAsPdf(canvas, `${EXPORT_FILENAME_BASE}.pdf`);
+    void downloadCanvasAsPdf(canvas, `${EXPORT_FILENAME_BASE}.pdf`);
   }, [zones, shapes, scale, origin]);
 
   // zones et formes n'appartiennent à aucune salle : on les pose au centre
@@ -514,7 +568,11 @@ export function PlannerCanvas() {
     [addShape, visiblePlanCenter],
   );
 
-  const currentPlan = useMemo(() => ({ objects, zones, shapes }), [objects, zones, shapes]);
+  const getCurrentPlan = useCallback(() => {
+    const { objects, zones, shapes } = latestRef.current;
+    return { objects, zones, shapes };
+  }, []);
+  const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
 
   const handleReset = useCallback(() => {
     const confirmed = window.confirm(
@@ -539,10 +597,10 @@ export function PlannerCanvas() {
         onDelete={removeSelected}
         onExportJpeg={handleExportJpeg}
         onExportPdf={handleExportPdf}
-        currentPlan={currentPlan}
+        getCurrentPlan={getCurrentPlan}
         onOpenPlan={openPlan}
         open={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
+        onClose={closeSidebar}
       />
       <div className="relative flex-1">
         {!isSidebarOpen && (
@@ -589,126 +647,138 @@ export function PlannerCanvas() {
         >
           🗑 Réinitialiser
         </button>
-        <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto">
-          <Stage
-            ref={stageRef}
-            width={contentWidth}
-            height={contentHeight}
-            onMouseDown={handleStageMouseDown}
-            onMouseMove={handleStageMouseMove}
-            onMouseUp={handleStageMouseUp}
-          >
-            <Layer>
-              {PLAN_ROOMS.map(({ room }) => {
-                const roomOrigin = roomOriginPx(room.id);
-                // tous les titres sur une même ligne, sous le bas du plan entier
-                const titleY = origin.y + cmToPx(PLAN_BOUNDS.maxY, scale) + ROOM_TITLE_GAP_PX - roomOrigin.y;
-                return <Room key={room.id} room={room} scale={scale} origin={roomOrigin} titleY={titleY} />;
-              })}
-              {zones.map((zone) => (
-                <Zone
-                  key={zone.id}
-                  zone={zone}
-                  scale={scale}
-                  origin={origin}
-                  selected={zone.id === selectedZoneId}
-                  onSelect={selectZone}
-                  onChange={updateZone}
-                  onBeginChange={pushHistory}
-                />
-              ))}
-              {objects.map((obj) =>
-                obj.kind === "table" ? (
-                  <Table
-                    key={obj.id}
-                    table={obj}
-                    scale={scale}
-                    origin={roomOriginPx(obj.roomId)}
-                    selected={selectedIds.includes(obj.id)}
-                    getDragGroup={getDragGroup}
-                    onPointerDown={handleObjectPointerDown}
-                    onDragDelta={handleDragDelta}
-                    onDragBegin={pushHistory}
-                  />
-                ) : (
-                  <Chair
-                    key={obj.id}
-                    chair={obj}
-                    scale={scale}
-                    origin={roomOriginPx(obj.roomId)}
-                    selected={selectedIds.includes(obj.id)}
-                    getDragGroup={getDragGroup}
-                    onPointerDown={handleObjectPointerDown}
-                    onDragDelta={handleDragDelta}
-                    onDragBegin={pushHistory}
-                  />
-                ),
-              )}
-              {/* au-dessus des tables : flèches et pictos servent souvent à les signaler */}
-              {shapes.map((shape) => (
-                <PlanShape
-                  key={shape.id}
-                  shape={shape}
-                  scale={scale}
-                  origin={origin}
-                  selected={shape.id === selectedShapeId}
-                  onSelect={selectShape}
-                  onChange={updateShape}
-                  onBeginChange={pushHistory}
-                />
-              ))}
-              {selectionArea && <SelectionRect area={selectionArea} />}
-            </Layer>
-          </Stage>
+        <div ref={scrollContainerRef} onScroll={syncStageToScroll} className="absolute inset-0 overflow-auto">
+          {/* bloc à la taille du plan zoomé : donne son étendue au défilement et sert de repère aux menus */}
+          <div className="relative" style={{ width: contentWidth, height: contentHeight }}>
+            <div className="sticky top-0 left-0" style={{ width: visibleWidth, height: visibleHeight }}>
+              <Stage
+                ref={stageRef}
+                width={visibleWidth}
+                height={visibleHeight}
+                onMouseDown={handleStageMouseDown}
+                onMouseMove={handleStageMouseMove}
+                onMouseUp={handleStageMouseUp}
+              >
+                {/*
+                  décor statique (salles) sur sa propre couche, sans écoute des
+                  événements : Konva ne la redessine pas quand seuls les objets
+                  de la couche du dessus bougent (drag, sélection...)
+                */}
+                <Layer listening={false}>
+                  {PLAN_ROOMS.map(({ room }) => {
+                    const roomOrigin = roomOriginPx(room.id);
+                    // tous les titres sur une même ligne, sous le bas du plan entier
+                    const titleY = origin.y + cmToPx(PLAN_BOUNDS.maxY, scale) + ROOM_TITLE_GAP_PX - roomOrigin.y;
+                    return <Room key={room.id} room={room} scale={scale} origin={roomOrigin} titleY={titleY} />;
+                  })}
+                </Layer>
+                <Layer>
+                  {zones.map((zone) => (
+                    <Zone
+                      key={zone.id}
+                      zone={zone}
+                      scale={scale}
+                      origin={origin}
+                      selected={zone.id === selectedZoneId}
+                      onSelect={selectZone}
+                      onChange={updateZone}
+                      onBeginChange={pushHistory}
+                    />
+                  ))}
+                  {objects.map((obj) =>
+                    obj.kind === "table" ? (
+                      <Table
+                        key={obj.id}
+                        table={obj}
+                        scale={scale}
+                        origin={roomOriginPx(obj.roomId)}
+                        selected={selectedIds.includes(obj.id)}
+                        getDragGroup={getDragGroup}
+                        onPointerDown={handleObjectPointerDown}
+                        onDragDelta={handleDragDelta}
+                        onDragBegin={pushHistory}
+                      />
+                    ) : (
+                      <Chair
+                        key={obj.id}
+                        chair={obj}
+                        scale={scale}
+                        origin={roomOriginPx(obj.roomId)}
+                        selected={selectedIds.includes(obj.id)}
+                        getDragGroup={getDragGroup}
+                        onPointerDown={handleObjectPointerDown}
+                        onDragDelta={handleDragDelta}
+                        onDragBegin={pushHistory}
+                      />
+                    ),
+                  )}
+                  {/* au-dessus des tables : flèches et pictos servent souvent à les signaler */}
+                  {shapes.map((shape) => (
+                    <PlanShape
+                      key={shape.id}
+                      shape={shape}
+                      scale={scale}
+                      origin={origin}
+                      selected={shape.id === selectedShapeId}
+                      onSelect={selectShape}
+                      onChange={updateShape}
+                      onBeginChange={pushHistory}
+                    />
+                  ))}
+                  {selectionArea && <SelectionRect area={selectionArea} />}
+                </Layer>
+              </Stage>
+            </div>
 
-          {selectedZone && zonePanelPos && (
-            <ZonePanel
-              key={selectedZone.id}
-              zone={selectedZone}
-              x={zonePanelPos.x}
-              y={zonePanelPos.y}
-              onRename={(name) => updateZone(selectedZone.id, { name })}
-              onResize={(widthCm, heightCm) => updateZone(selectedZone.id, { widthCm, heightCm })}
-              onRecolor={(color) => updateZone(selectedZone.id, { color })}
-              onDelete={() => removeZone(selectedZone.id)}
-              onClose={() => selectZone(null)}
-              onBeginChange={pushHistory}
-            />
-          )}
+            {selectedZone && zonePanelPos && (
+              <ZonePanel
+                key={selectedZone.id}
+                zone={selectedZone}
+                x={zonePanelPos.x}
+                y={zonePanelPos.y}
+                onRename={(name) => updateZone(selectedZone.id, { name })}
+                onResize={(widthCm, heightCm) => updateZone(selectedZone.id, { widthCm, heightCm })}
+                onRecolor={(color) => updateZone(selectedZone.id, { color })}
+                onDelete={() => removeZone(selectedZone.id)}
+                onClose={() => selectZone(null)}
+                onBeginChange={pushHistory}
+              />
+            )}
 
-          {selectedShape && shapePanelPos && (
-            <ShapePanel
-              key={selectedShape.id}
-              shape={selectedShape}
-              x={shapePanelPos.x}
-              y={shapePanelPos.y}
-              onChangeText={(text) => updateShape(selectedShape.id, { text })}
-              onResize={(widthCm, heightCm) => updateShape(selectedShape.id, { widthCm, heightCm })}
-              onRecolor={(color) => updateShape(selectedShape.id, { color })}
-              onRotate={() => rotateShape(selectedShape)}
-              onDelete={() => removeShape(selectedShape.id)}
-              onClose={() => selectShape(null)}
-              onBeginChange={pushHistory}
-            />
-          )}
+            {selectedShape && shapePanelPos && (
+              <ShapePanel
+                key={selectedShape.id}
+                shape={selectedShape}
+                x={shapePanelPos.x}
+                y={shapePanelPos.y}
+                onChangeText={(text) => updateShape(selectedShape.id, { text })}
+                onResize={(widthCm, heightCm) => updateShape(selectedShape.id, { widthCm, heightCm })}
+                onRecolor={(color) => updateShape(selectedShape.id, { color })}
+                onRotate={() => rotateShape(selectedShape)}
+                onDelete={() => removeShape(selectedShape.id)}
+                onClose={() => selectShape(null)}
+                onBeginChange={pushHistory}
+              />
+            )}
 
-          {singleSelectedTable && tablePanelPos && (
-            <TablePanel
-              key={singleSelectedTable.id}
-              table={singleSelectedTable}
-              x={tablePanelPos.x}
-              y={tablePanelPos.y}
-              onRename={(name) => updateTable(singleSelectedTable.id, { name })}
-              onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
-              onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
-              onRotate={rotateSelectedTables}
-              onDelete={removeSelected}
-              otherRooms={PLAN_ROOMS.map(({ room }) => room).filter((room) => room.id !== singleSelectedTable.roomId)}
-              onMoveToRoom={(roomId) => moveTableToRoom(singleSelectedTable.id, roomId)}
-              onClose={clearSelection}
-              onBeginChange={pushHistory}
-            />
-          )}
+            {singleSelectedTable && tablePanelPos && (
+              <TablePanel
+                key={singleSelectedTable.id}
+                table={singleSelectedTable}
+                x={tablePanelPos.x}
+                y={tablePanelPos.y}
+                onRename={(name) => updateTable(singleSelectedTable.id, { name })}
+                onResize={(widthCm, depthCm) => updateTable(singleSelectedTable.id, { widthCm, depthCm })}
+                onRecolor={(color) => updateTable(singleSelectedTable.id, { color })}
+                onRotate={rotateSelectedTables}
+                onDelete={removeSelected}
+                otherRooms={PLAN_ROOMS.map(({ room }) => room).filter((room) => room.id !== singleSelectedTable.roomId)}
+                onMoveToRoom={(roomId) => moveTableToRoom(singleSelectedTable.id, roomId)}
+                onClose={clearSelection}
+                onBeginChange={pushHistory}
+              />
+            )}
+          </div>
         </div>
 
         <ZoneLegend zones={zones} />

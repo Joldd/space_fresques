@@ -1,7 +1,7 @@
 // lib/planner/use-planner-store.ts
 "use client";
 
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   ChairObject,
   Point,
@@ -25,6 +25,12 @@ import { DEFAULT_SHAPE_COLOR, MIN_SHAPE_SIZE_CM, getShapeDefinition, normalizeRo
 import { sanitizePlanData, type PlanData } from "./plan-file";
 
 const STORAGE_KEY = "space-fresques:planner";
+/**
+ * délai d'inactivité avant la sauvegarde locale : un drag modifie le plan à
+ * chaque mouvement de souris, et sérialiser + écrire tout le plan (synchrone,
+ * bloquant) à chaque image saccaderait le déplacement
+ */
+const SAVE_DELAY_MS = 300;
 
 export const DEFAULT_TABLE = { widthCm: 200, depthCm: 300 };
 export const DEFAULT_CHAIR = { diameterCm: 80 };
@@ -551,6 +557,14 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+function writeSavedPlan(plan: PlanData) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
+  } catch {
+    // quota dépassé ou stockage désactivé : on ignore
+  }
+}
+
 function initialState(): State {
   return {
     objects: [],
@@ -589,18 +603,39 @@ export function usePlannerStore() {
     }
   }, []);
 
-  // sauvegarde à chaque changement (une fois l'hydratation initiale faite)
+  // sauvegarde différée après chaque changement (une fois l'hydratation
+  // initiale faite) : seul le dernier état d'une rafale de changements est
+  // écrit, SAVE_DELAY_MS après le dernier
+  const pendingSaveRef = useRef<PlanData | null>(null);
   useEffect(() => {
     if (!state.hydrated) return;
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ objects: state.objects, zones: state.zones, shapes: state.shapes }),
-      );
-    } catch {
-      // quota dépassé ou stockage désactivé : on ignore
-    }
+    pendingSaveRef.current = { objects: state.objects, zones: state.zones, shapes: state.shapes };
+    const timer = window.setTimeout(() => {
+      if (pendingSaveRef.current) writeSavedPlan(pendingSaveRef.current);
+      pendingSaveRef.current = null;
+    }, SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [state.hydrated, state.objects, state.zones, state.shapes]);
+
+  // une sauvegarde encore en attente est écrite tout de suite si la page est
+  // quittée, masquée (onglet changé, mobile mis en veille) ou démontée
+  useEffect(() => {
+    function flushPendingSave() {
+      if (!pendingSaveRef.current) return;
+      writeSavedPlan(pendingSaveRef.current);
+      pendingSaveRef.current = null;
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") flushPendingSave();
+    }
+    window.addEventListener("pagehide", flushPendingSave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      flushPendingSave();
+    };
+  }, []);
 
   const addTable = useCallback(
     (roomId: RoomId, widthCm: number, depthCm: number) =>

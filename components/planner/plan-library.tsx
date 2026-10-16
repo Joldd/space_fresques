@@ -8,7 +8,8 @@ import { slugify } from "@/lib/planner/slugify";
 
 type PlanLibraryProps = {
   /** configuration actuellement affichée sur le canvas */
-  currentPlan: PlanData;
+  /** plan en cours, lu seulement au moment d'enregistrer ou d'exporter (getter stable : pas de re-rendu à chaque drag) */
+  getCurrentPlan: () => PlanData;
   /** remplace le plan en cours (annulable par Ctrl+Z) */
   onOpenPlan: (plan: PlanData) => void;
 };
@@ -36,7 +37,7 @@ function confirmReplace(name: string): boolean {
  * nommées dans le navigateur, et exporte/importe un plan en fichier .json
  * pour le partager (la personne qui le reçoit l'importe de son côté).
  */
-export function PlanLibrary({ currentPlan, onOpenPlan }: PlanLibraryProps) {
+export function PlanLibrary({ getCurrentPlan, onOpenPlan }: PlanLibraryProps) {
   const { plans, savePlan, deletePlan } = useSavedPlans();
   const [name, setName] = useState("");
   const [message, setMessage] = useState<{ kind: "info" | "error"; text: string } | null>(null);
@@ -49,7 +50,7 @@ export function PlanLibrary({ currentPlan, onOpenPlan }: PlanLibraryProps) {
     if (!trimmedName) return;
     const exists = plans.some((p) => p.name === trimmedName);
     if (exists && !window.confirm(`Un plan « ${trimmedName} » existe déjà. Le remplacer ?`)) return;
-    if (savePlan(trimmedName, currentPlan)) {
+    if (savePlan(trimmedName, getCurrentPlan())) {
       setMessage({ kind: "info", text: `Plan « ${trimmedName} » enregistré.` });
     } else {
       setMessage({ kind: "error", text: "Impossible d'enregistrer : le stockage du navigateur est indisponible ou plein." });
@@ -70,7 +71,7 @@ export function PlanLibrary({ currentPlan, onOpenPlan }: PlanLibraryProps) {
 
   function handleExportCurrent() {
     const exportName = trimmedName || "Plan de salle";
-    downloadPlanFile(currentPlan, exportName, `plan-${slugify(exportName)}.json`);
+    downloadPlanFile(getCurrentPlan(), exportName, `plan-${slugify(exportName)}.json`);
   }
 
   async function handleImport(e: ChangeEvent<HTMLInputElement>) {

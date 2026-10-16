@@ -1,10 +1,11 @@
 // components/planner/zone-legend.tsx
 "use client";
 
+import { memo } from "react";
 import type { ZoneObject } from "@/lib/planner/types";
 
 /** légende récapitulant les zones posées sur le plan (couleur + nom) */
-export function ZoneLegend({ zones }: { zones: ZoneObject[] }) {
+export const ZoneLegend = memo(function ZoneLegend({ zones }: { zones: ZoneObject[] }) {
   if (zones.length === 0) return null;
 
   return (
@@ -25,4 +26,4 @@ export function ZoneLegend({ zones }: { zones: ZoneObject[] }) {
       </ul>
     </div>
   );
-}
+});

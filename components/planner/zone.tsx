@@ -1,7 +1,7 @@
 // components/planner/zone.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Rect, Transformer } from "react-konva";
 import type Konva from "konva";
 import type { ZoneObject } from "@/lib/planner/types";
@@ -28,7 +28,7 @@ type ZoneProps = {
  * par le contour de la salle, contrairement aux tables/chaises) : couleur
  * pleine mais semi-transparente pour laisser voir ce qu'il y a derrière.
  */
-export function Zone({ zone, scale, origin, selected, onSelect, onChange, onBeginChange }: ZoneProps) {
+export const Zone = memo(function Zone({ zone, scale, origin, selected, onSelect, onChange, onBeginChange }: ZoneProps) {
   const rectRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
@@ -103,4 +103,4 @@ export function Zone({ zone, scale, origin, selected, onSelect, onChange, onBegi
       )}
     </>
   );
-}
+});

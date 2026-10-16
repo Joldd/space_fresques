@@ -1,16 +1,17 @@
 // components/planner/room.tsx
 "use client";
 
+import { memo } from "react";
 import { Group, Line, Rect, Shape, Text } from "react-konva";
 import type Konva from "konva";
-import type { Room } from "@/lib/planner/types";
+import type { Room as RoomData } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
 import { polygonBounds, tracePolygonPath } from "@/lib/planner/geometry";
 import { ROOM_GAP_CM, roomFloorArea } from "@/lib/planner/rooms";
 import { fitFontSize } from "@/lib/planner/fit-text";
 
 type RoomProps = {
-  room: Room;
+  room: RoomData;
   scale: number;
   /** origine du repère de la salle dans le Stage, en px */
   origin: { x: number; y: number };
@@ -39,7 +40,13 @@ function formatMeters(m: number): string {
   return `${m.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}${NBSP}m`;
 }
 
-export function Room({ room, scale, origin, titleY }: RoomProps) {
+/**
+ * Salle (contour, quadrillage, obstacles, cloisons, titre) : purement
+ * décorative, sur une couche Konva à part qui n'écoute pas les événements.
+ * Mémoïsée — avec des props stables (voir planner-canvas.tsx), elle n'est
+ * pas re-rendue pendant un drag, et sa couche n'est donc pas redessinée.
+ */
+export const Room = memo(function Room({ room, scale, origin, titleY }: RoomProps) {
   const bounds = polygonBounds(room.polygon);
   const widthPx = cmToPx(bounds.maxX - bounds.minX, scale);
   const heightPx = cmToPx(bounds.maxY - bounds.minY, scale);
@@ -63,20 +70,21 @@ export function Room({ room, scale, origin, titleY }: RoomProps) {
   // sur deux lignes : les titres sont sur une même ligne, côte à côte
   const titleBoxWidthPx = widthPx + 2 * TITLE_GAP_SHARE * cmToPx(ROOM_GAP_CM, scale);
 
-  const verticalLines = [];
-  for (let cm = Math.ceil(bounds.minX / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxX; cm += GRID_STEP_CM) {
-    const px = cmToPx(cm, scale);
-    verticalLines.push(
-      <Line key={`v-${cm}`} points={[px, 0, px, heightPx]} stroke="#E4D9C4" strokeWidth={1} />,
-    );
-  }
-
-  const horizontalLines = [];
-  for (let cm = Math.ceil(bounds.minY / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxY; cm += GRID_STEP_CM) {
-    const px = cmToPx(cm, scale);
-    horizontalLines.push(
-      <Line key={`h-${cm}`} points={[0, px, widthPx, px]} stroke="#E4D9C4" strokeWidth={1} />,
-    );
+  // quadrillage tracé d'un seul bloc (une forme plutôt qu'une centaine de
+  // lignes Konva distinctes), découpé ensuite au contour par clipToRoom
+  function drawGrid(ctx: Konva.Context, shape: Konva.Shape) {
+    ctx.beginPath();
+    for (let cm = Math.ceil(bounds.minX / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxX; cm += GRID_STEP_CM) {
+      const px = cmToPx(cm, scale);
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, heightPx);
+    }
+    for (let cm = Math.ceil(bounds.minY / GRID_STEP_CM) * GRID_STEP_CM; cm < bounds.maxY; cm += GRID_STEP_CM) {
+      const px = cmToPx(cm, scale);
+      ctx.moveTo(0, px);
+      ctx.lineTo(widthPx, px);
+    }
+    ctx.strokeShape(shape);
   }
 
   return (
@@ -100,16 +108,9 @@ export function Room({ room, scale, origin, titleY }: RoomProps) {
         shadowBlur={16}
         listening={false}
       />
-      <Shape
-        name="room-background"
-        sceneFunc={drawRoomOutline}
-        fill="#F6F1E7"
-        stroke="#C9B99A"
-        strokeWidth={2}
-      />
+      <Shape sceneFunc={drawRoomOutline} fill="#F6F1E7" stroke="#C9B99A" strokeWidth={2} />
       <Group clipFunc={clipToRoom}>
-        {verticalLines}
-        {horizontalLines}
+        <Shape sceneFunc={drawGrid} stroke="#E4D9C4" strokeWidth={1} />
       </Group>
       {/*
         cloisons (cloison mobile...) : simple repère visuel en pointillés,
@@ -203,4 +204,4 @@ export function Room({ room, scale, origin, titleY }: RoomProps) {
       />
     </Group>
   );
-}
+});

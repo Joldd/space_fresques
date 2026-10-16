@@ -1,7 +1,7 @@
 // components/planner/table.tsx
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { Group, Rect, Text } from "react-konva";
 import type { SceneObject, TableObject } from "@/lib/planner/types";
 import { cmToPx } from "@/lib/planner/scale";
@@ -28,7 +28,7 @@ type TableProps = {
   onDragBegin: () => void;
 };
 
-export function Table({
+export const Table = memo(function Table({
   table,
   scale,
   origin,
@@ -125,4 +125,4 @@ export function Table({
       )}
     </Group>
   );
-}
+});

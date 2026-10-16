@@ -1,6 +1,5 @@
 // lib/planner/export.ts
 import type Konva from "konva";
-import { jsPDF } from "jspdf";
 import type { ShapeObject, ZoneObject } from "./types";
 import { planBounds } from "./rooms";
 import { ROOM_TITLE_SPACE_PX, cmToPx } from "./scale";
@@ -127,7 +126,13 @@ export function buildExportCanvas(
   title: string,
 ): HTMLCanvasElement {
   const crop = computeExportCropPx(zones, shapes, scale, origin);
+  // le Stage est décalé du défilement en cours (voir planner-canvas.tsx) : on
+  // l'annule le temps du rendu, le recadrage étant exprimé dans le repère du
+  // contenu (le rendu couvre aussi ce qui est hors de la partie visible)
+  const scrollPosition = stage.position();
+  stage.position({ x: 0, y: 0 });
   const planCanvas = stage.toCanvas({ ...crop, pixelRatio: EXPORT_PIXEL_RATIO });
+  stage.position(scrollPosition);
 
   const legendCanvas = buildLegendCanvas(zones, planCanvas.width / EXPORT_PIXEL_RATIO);
 
@@ -176,7 +181,9 @@ export function downloadCanvasAsJpeg(canvas: HTMLCanvasElement, filename: string
   triggerDownload(canvas.toDataURL("image/jpeg", 0.92), filename);
 }
 
-export function downloadCanvasAsPdf(canvas: HTMLCanvasElement, filename: string) {
+/** jsPDF (volumineux) n'est chargé qu'au premier export PDF, pas à l'ouverture du planner */
+export async function downloadCanvasAsPdf(canvas: HTMLCanvasElement, filename: string) {
+  const { jsPDF } = await import("jspdf");
   const imgData = canvas.toDataURL("image/jpeg", 0.92);
   const pageWidth = canvas.width / EXPORT_PIXEL_RATIO;
   const pageHeight = canvas.height / EXPORT_PIXEL_RATIO;

@@ -1,7 +1,7 @@
 // components/planner/planner-sidebar.tsx
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { memo, type FormEvent, useEffect, useState } from "react";
 import type { RoomId, ShapeKind } from "@/lib/planner/types";
 import { DEFAULT_CHAIR, DEFAULT_TABLE } from "@/lib/planner/use-planner-store";
 import { PLAN_ROOMS } from "@/lib/planner/rooms";
@@ -28,7 +28,7 @@ type PlannerSideBarProps = {
   onDelete: () => void;
   onExportJpeg: () => void;
   onExportPdf: () => void;
-  currentPlan: PlanData;
+  getCurrentPlan: () => PlanData;
   onOpenPlan: (plan: PlanData) => void;
   /**
    * En dessous du breakpoint "md", la sidebar devient un tiroir superposé
@@ -124,7 +124,7 @@ function RoomPicker({
   );
 }
 
-export function PlannerSideBar({
+export const PlannerSideBar = memo(function PlannerSideBar({
   activeRoomId,
   onActiveRoomChange,
   onAddTable,
@@ -138,7 +138,7 @@ export function PlannerSideBar({
   onDelete,
   onExportJpeg,
   onExportPdf,
-  currentPlan,
+  getCurrentPlan,
   onOpenPlan,
   open,
   onClose,
@@ -272,7 +272,7 @@ export function PlannerSideBar({
         </Card>
 
         <Card title="Mes plans">
-          <PlanLibrary currentPlan={currentPlan} onOpenPlan={onOpenPlan} />
+          <PlanLibrary getCurrentPlan={getCurrentPlan} onOpenPlan={onOpenPlan} />
         </Card>
 
         {/* Pas besoin de chaises pour l'instant */}
@@ -337,4 +337,4 @@ export function PlannerSideBar({
       </aside>
     </>
   );
-}
+});
